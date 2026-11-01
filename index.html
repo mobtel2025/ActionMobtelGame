@@ -75,7 +75,7 @@
         }
         #scoreDisplay {
             position: absolute;
-            top: 85px; /* Obniżono, aby nie nakładało się na pasek życia */
+            top: 85px; 
             width: 100%;
             text-align: center;
             color: #00ffff;
@@ -178,7 +178,7 @@
             </div>
         </div>
         <div class="hud-panel" id="bossPanel">
-            <div class="hud-title" style="color: #ff3300;">Wściekły Kundel</div>
+            <div class="hud-title" style="color: #ff3300;">Kundel Blacki</div>
             <div class="hearts-row" id="bossHearts">
                 <div class="heart"></div>
                 <div class="heart"></div>
@@ -222,8 +222,8 @@
         playerImg.onerror = () => { console.error("Brak pliku Aleks.jpg"); };
 
         const bossImg = new Image();
-        bossImg.src = 'black.jpg';
-        bossImg.onerror = () => { console.error("Brak pliku black.jpg"); };
+        bossImg.src = 'Black.jpg';
+        bossImg.onerror = () => { console.error("Brak pliku Black.jpg"); };
         
         let audioCtx;
         let beatInterval = 500; 
@@ -338,7 +338,7 @@
                     audioCtx.resume();
                 }
             } catch (e) {
-                console.warn("Dźwięk wyłączony lub zablokowany przez przeglądarkę", e);
+                console.warn("Dźwięk wyłączony lub zablokowany", e);
             }
         }
 
@@ -355,8 +355,8 @@
             const press = (e) => { 
                 e.preventDefault(); 
                 if(gameState === 'playing'){ 
-                    keys[keyName] = true; // Zawsze najpierw aktywuj ruch
-                    initAudio(); // Dopiero potem próbuj dźwięk
+                    keys[keyName] = true; 
+                    initAudio(); 
                 }
             };
             const release = (e) => { e.preventDefault(); keys[keyName] = false; };

@@ -11,7 +11,7 @@
             width: 100%;
             height: 100%;
             overflow: hidden;
-            background-color: #050510;
+            background-color: #87CEEB; /* Zmienione na skyblue */
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             touch-action: none;
             user-select: none;
@@ -28,7 +28,7 @@
             font-size: 28px;
             font-weight: bold;
             z-index: 15;
-            text-shadow: 0 0 15px #00ffff;
+            text-shadow: 0 0 15px #000000, 0 0 5px #000000; /* Dodany ciemny cień dla widoczności na jasnym tle */
             pointer-events: none;
         }
         
@@ -48,7 +48,7 @@
         .control-btn {
             width: 75px;
             height: 75px;
-            background: rgba(0, 255, 255, 0.1);
+            background: rgba(0, 0, 0, 0.4); /* Zmienione dla lepszego kontrastu na jasnym tle */
             border: 2px solid #00ffff;
             color: #00ffff;
             font-size: 32px;
@@ -57,7 +57,7 @@
             align-items: center;
             justify-content: center;
             cursor: pointer;
-            box-shadow: 0 0 15px rgba(0, 255, 255, 0.3);
+            box-shadow: 0 0 15px rgba(0, 255, 255, 0.5);
             -webkit-tap-highlight-color: transparent;
         }
         .control-btn:active {
@@ -85,9 +85,8 @@
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
 
-        // Wczytanie postaci
         const playerImg = new Image();
-        playerImg.src = 'Aleks.jpg'; // Upewnij się, że plik nazywa się Aleks.jpg
+        playerImg.src = 'Aleks.jpg'; 
         
         let audioCtx, isPlaying = true;
         let beatInterval = 2500; 
@@ -101,7 +100,6 @@
         const pentatonicNotes = [261.63, 293.66, 329.63, 392.00, 440.00, 523.25];
         const keys = {};
 
-        // Zmienne animacji postaci
         let frame = 0;
         let animCounter = 0;
         let lastDir = 'right';
@@ -136,7 +134,6 @@
         bindControl('btnRight', 'ArrowRight');
         bindControl('btnJump', 'ArrowUp');
 
-        // Postać jest teraz większa, by było ją dobrze widać
         const player = {
             x: 100, y: 200, width: 60, height: 60,
             vx: 0, vy: 0, speed: 7, jumpPower: -16,
@@ -145,7 +142,8 @@
 
         let platforms = [];
         function generateMap() {
-            const ch = canvas.height;
+            // Podniesiono podłogę o 120px
+            const ch = canvas.height - 120; 
             platforms = [
                 {x: 0, y: ch - 50, w: 1000, h: 50, color: '#ff00ff'},
                 {x: 1200, y: ch - 50, w: 800, h: 50, color: '#00ffff'},
@@ -200,7 +198,6 @@
             player.x += player.vx;
             player.y += player.vy;
 
-            // Ruch
             if (keys['ArrowLeft'] || keys['KeyA']) {
                 player.vx = -player.speed;
                 lastDir = 'left';
@@ -253,28 +250,28 @@
             cameraX = player.x - canvas.width / 3;
             if (cameraX < 0) cameraX = 0;
 
-            // Logika animacji
             if (player.grounded) {
                 animCounter++;
                 if (Math.abs(player.vx) > 0.5) {
-                    if (animCounter > 5) { // Szybkość biegu
+                    if (animCounter > 5) { 
                         frame = (frame + 1) % 4;
                         animCounter = 0;
                     }
                 } else {
-                    if (animCounter > 15) { // Szybkość animacji w spoczynku
+                    if (animCounter > 15) { 
                         frame = (frame + 1) % 4;
                         animCounter = 0;
                     }
                 }
             } else {
-                frame = 1; // Klatka w locie (możesz zmienić np. na 0, 1, 2 lub 3 w rzędzie skoku)
+                frame = 1; 
             }
         }
 
         function draw() {
-            const bgVal = Math.floor(5 + beatFlash * 15);
-            ctx.fillStyle = `rgb(5, 5, ${bgVal + 10})`;
+            // Tło w kolorze Sky Blue (RGB 135, 206, 235) połączone z pulsującym bitem
+            const flash = Math.floor(beatFlash * 25);
+            ctx.fillStyle = `rgb(${135 + flash}, ${206 + flash}, ${235 + flash})`;
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
             ctx.save();
@@ -289,12 +286,9 @@
                 }
             }
 
-            // RYSOWANIE POSTACI (SPRITESHEET)
             ctx.save();
-            // Przesuwamy punkt środkowy rysowania na środek gracza
             ctx.translate(player.x + player.width / 2, player.y + player.height / 2);
             
-            // Odbicie lustrzane, jeśli pies idzie w lewo
             if (lastDir === 'left') {
                 ctx.scale(-1, 1);
             }
@@ -305,14 +299,13 @@
                 let row = 0;
                 
                 if (!player.grounded) {
-                    row = 2; // 3 rząd to skok (indeks 2)
+                    row = 2; 
                 } else if (Math.abs(player.vx) > 0.5) {
-                    row = 1; // 2 rząd to bieg (indeks 1)
+                    row = 1; 
                 } else {
-                    row = 0; // 1 rząd to stanie (indeks 0)
+                    row = 0; 
                 }
 
-                // Rysujemy klatkę (od przesuniętego środka, by zachować poprawne kolizje)
                 ctx.drawImage(
                     playerImg,
                     frame * frameW, row * frameH, frameW, frameH,
@@ -321,11 +314,12 @@
             } else {
                 // Jeśli obrazek jeszcze się ładuje lub nie został znaleziony - rysujemy zastępczy kwadrat
                 ctx.fillStyle = '#ffffff';
+                ctx.shadowBlur = 0; // Usunięcie poświaty dla zastępczego kwadratu
                 ctx.fillRect(-player.width / 2, -player.height / 2, player.width, player.height);
             }
-            ctx.restore(); // Koniec transformacji gracza
+            ctx.restore(); 
             
-            ctx.restore(); // Koniec transformacji kamery
+            ctx.restore(); 
         }
 
         function gameLoop(time) {

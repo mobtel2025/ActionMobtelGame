@@ -11,7 +11,8 @@
             width: 100%;
             height: 100%;
             overflow: hidden;
-            background-color: #87CEEB; /* Zmienione na skyblue */
+            /* Kolor idealnie dopasowany do tła pliku 69477.jpg */
+            background-color: #7ac5e8; 
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             touch-action: none;
             user-select: none;
@@ -28,7 +29,7 @@
             font-size: 28px;
             font-weight: bold;
             z-index: 15;
-            text-shadow: 0 0 15px #000000, 0 0 5px #000000; /* Dodany ciemny cień dla widoczności na jasnym tle */
+            text-shadow: 0 0 15px #000000, 0 0 5px #000000;
             pointer-events: none;
         }
         
@@ -48,7 +49,7 @@
         .control-btn {
             width: 75px;
             height: 75px;
-            background: rgba(0, 0, 0, 0.4); /* Zmienione dla lepszego kontrastu na jasnym tle */
+            background: rgba(0, 0, 0, 0.4);
             border: 2px solid #00ffff;
             color: #00ffff;
             font-size: 32px;
@@ -86,7 +87,7 @@
         canvas.height = window.innerHeight;
 
         const playerImg = new Image();
-        playerImg.src = 'Aleks.jpg'; 
+        playerImg.src = '69477.jpg'; 
         
         let audioCtx, isPlaying = true;
         let beatInterval = 2500; 
@@ -142,7 +143,6 @@
 
         let platforms = [];
         function generateMap() {
-            // Podniesiono podłogę o 120px
             const ch = canvas.height - 120; 
             platforms = [
                 {x: 0, y: ch - 50, w: 1000, h: 50, color: '#ff00ff'},
@@ -269,9 +269,8 @@
         }
 
         function draw() {
-            // Tło w kolorze Sky Blue (RGB 135, 206, 235) połączone z pulsującym bitem
-            const flash = Math.floor(beatFlash * 25);
-            ctx.fillStyle = `rgb(${135 + flash}, ${206 + flash}, ${235 + flash})`;
+            // Stałe tło wyciągnięte z obrazka 69477.jpg, aby zlikwidować widoczny kwadrat
+            ctx.fillStyle = '#7ac5e8';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
             ctx.save();
@@ -293,6 +292,10 @@
                 ctx.scale(-1, 1);
             }
 
+            // Likwidacja poświaty dla psa
+            ctx.shadowBlur = 0;
+            ctx.shadowColor = 'transparent';
+
             if (playerImg.complete && playerImg.width > 0) {
                 const frameW = playerImg.width / 4;
                 const frameH = playerImg.height / 3;
@@ -312,9 +315,7 @@
                     -player.width / 2, -player.height / 2, player.width, player.height
                 );
             } else {
-                // Jeśli obrazek jeszcze się ładuje lub nie został znaleziony - rysujemy zastępczy kwadrat
                 ctx.fillStyle = '#ffffff';
-                ctx.shadowBlur = 0; // Usunięcie poświaty dla zastępczego kwadratu
                 ctx.fillRect(-player.width / 2, -player.height / 2, player.width, player.height);
             }
             ctx.restore(); 

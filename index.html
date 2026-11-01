@@ -2,8 +2,8 @@
 <html lang="pl">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Neon Rhythm Jumper</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Neon Rhythm Jumper - Aleks Edition</title>
     <style>
         body, html {
             margin: 0;
@@ -11,50 +11,72 @@
             width: 100%;
             height: 100%;
             overflow: hidden;
-            background-color: #111;
+            background-color: #050510;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            touch-action: none;
+            user-select: none;
         }
         canvas {
             display: block;
         }
-        #overlay {
+        #scoreDisplay {
             position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            color: white;
+            top: 20px;
+            width: 100%;
             text-align: center;
-            pointer-events: none;
-            z-index: 10;
-        }
-        button {
-            pointer-events: auto;
-            padding: 15px 30px;
-            font-size: 22px;
+            color: #00ffff;
+            font-size: 28px;
             font-weight: bold;
-            background: #ff00ff;
-            color: white;
-            border: none;
-            border-radius: 8px;
+            z-index: 15;
+            text-shadow: 0 0 15px #00ffff;
+            pointer-events: none;
+        }
+        
+        .controls-container {
+            position: absolute;
+            bottom: 20px;
+            z-index: 10;
+            display: flex;
+            gap: 10px;
+        }
+        #controls-left {
+            left: 10px;
+        }
+        #controls-right {
+            right: 20px;
+        }
+        .control-btn {
+            width: 75px;
+            height: 75px;
+            background: rgba(0, 255, 255, 0.1);
+            border: 2px solid #00ffff;
+            color: #00ffff;
+            font-size: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
             cursor: pointer;
-            box-shadow: 0 0 20px #ff00ff;
-            transition: transform 0.1s;
+            box-shadow: 0 0 15px rgba(0, 255, 255, 0.3);
+            -webkit-tap-highlight-color: transparent;
         }
-        button:active {
+        .control-btn:active {
+            background: rgba(0, 255, 255, 0.4);
+            box-shadow: 0 0 25px #00ffff;
             transform: scale(0.95);
-        }
-        h1 {
-            font-size: 3rem;
-            margin-bottom: 30px;
-            text-shadow: 0 0 15px #00ffff, 0 0 30px #ff00ff;
         }
     </style>
 </head>
 <body>
+    <div id="scoreDisplay">Punkty: 0</div>
     <canvas id="gameCanvas"></canvas>
-    <div id="overlay">
-        <h1>Neon Rhythm Jumper</h1>
-        <button id="startBtn">START (Włącz Dźwięk)</button>
+
+    <div id="controls-left" class="controls-container">
+        <div class="control-btn" id="btnLeft">◄</div>
+        <div class="control-btn" id="btnRight">►</div>
+    </div>
+    <div id="controls-right" class="controls-container">
+        <div class="control-btn" id="btnJump">▲</div>
     </div>
 
     <script>
@@ -63,71 +85,131 @@
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
 
-        let audioCtx, isPlaying = false;
-        let beatInterval = 400; 
+        // Wczytanie postaci
+        const playerImg = new Image();
+        playerImg.src = 'Aleks.jpg'; // Upewnij się, że plik nazywa się Aleks.jpg
+        
+        let audioCtx, isPlaying = true;
+        let beatInterval = 2500; 
         let lastBeat = 0;
         let beatFlash = 0;
-
+        let cameraX = 0;
+        
+        let score = 0;
+        let maxPlayerX = 100;
+        const scoreDisplay = document.getElementById('scoreDisplay');
+        const pentatonicNotes = [261.63, 293.66, 329.63, 392.00, 440.00, 523.25];
         const keys = {};
-        window.addEventListener('keydown', e => keys[e.code] = true);
+
+        // Zmienne animacji postaci
+        let frame = 0;
+        let animCounter = 0;
+        let lastDir = 'right';
+
+        function initAudio() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                lastBeat = performance.now();
+                playSoothingChord();
+            }
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+        }
+
+        window.addEventListener('keydown', e => { initAudio(); keys[e.code] = true; });
         window.addEventListener('keyup', e => keys[e.code] = false);
 
+        function bindControl(btnId, keyName) {
+            const btn = document.getElementById(btnId);
+            const press = (e) => { e.preventDefault(); initAudio(); keys[keyName] = true; };
+            const release = (e) => { e.preventDefault(); keys[keyName] = false; };
+            
+            btn.addEventListener('touchstart', press, {passive: false});
+            btn.addEventListener('touchend', release, {passive: false});
+            btn.addEventListener('mousedown', press);
+            btn.addEventListener('mouseup', release);
+            btn.addEventListener('mouseleave', release);
+        }
+
+        bindControl('btnLeft', 'ArrowLeft');
+        bindControl('btnRight', 'ArrowRight');
+        bindControl('btnJump', 'ArrowUp');
+
+        // Postać jest teraz większa, by było ją dobrze widać
         const player = {
-            x: 100, y: 200, width: 30, height: 30,
-            vx: 0, vy: 0, speed: 6, jumpPower: -16,
-            grounded: false, color: '#00ffff'
+            x: 100, y: 200, width: 60, height: 60,
+            vx: 0, vy: 0, speed: 7, jumpPower: -16,
+            grounded: false
         };
 
-        const platforms = [
-            {x: 0, y: canvas.height - 50, w: canvas.width, h: 50, color: '#ff00ff'},
-            {x: 300, y: canvas.height - 180, w: 120, h: 20, color: '#00ff00'},
-            {x: 550, y: canvas.height - 280, w: 120, h: 20, color: '#ffff00'},
-            {x: 800, y: canvas.height - 380, w: 120, h: 20, color: '#ff0000'},
-            {x: 1050, y: canvas.height - 220, w: 120, h: 20, color: '#ff00ff'},
-            {x: 100, y: canvas.height - 350, w: 100, h: 20, color: '#ff9900'}
-        ];
+        let platforms = [];
+        function generateMap() {
+            const ch = canvas.height;
+            platforms = [
+                {x: 0, y: ch - 50, w: 1000, h: 50, color: '#ff00ff'},
+                {x: 1200, y: ch - 50, w: 800, h: 50, color: '#00ffff'},
+                {x: 2300, y: ch - 50, w: 1500, h: 50, color: '#ff00ff'},
+                {x: 4100, y: ch - 50, w: 2000, h: 50, color: '#00ffff'},
 
-        function playSynthKick() {
+                {x: 350, y: ch - 180, w: 120, h: 20, color: '#00ff00'},
+                {x: 600, y: ch - 300, w: 120, h: 20, color: '#ffff00'},
+                {x: 850, y: ch - 420, w: 120, h: 20, color: '#ff0000'},
+                
+                {x: 1300, y: ch - 200, w: 100, h: 20, color: '#ff9900'},
+                {x: 1550, y: ch - 320, w: 100, h: 20, color: '#ff00ff'},
+                {x: 1800, y: ch - 220, w: 100, h: 20, color: '#00ff00'},
+                
+                {x: 2500, y: ch - 150, w: 150, h: 20, color: '#ff0000'},
+                {x: 2800, y: ch - 280, w: 150, h: 20, color: '#ffff00'},
+                {x: 3100, y: ch - 400, w: 150, h: 20, color: '#ff00ff'},
+                {x: 3450, y: ch - 250, w: 100, h: 20, color: '#00ffff'},
+                {x: 3750, y: ch - 380, w: 100, h: 20, color: '#ff9900'}
+            ];
+        }
+        generateMap();
+
+        function playSoothingChord() {
             if(!audioCtx) return;
             const osc = audioCtx.createOscillator();
             const gain = audioCtx.createGain();
+            const freq = pentatonicNotes[Math.floor(Math.random() * pentatonicNotes.length)];
+            
             osc.connect(gain);
             gain.connect(audioCtx.destination);
             
-            osc.type = 'triangle';
-            osc.frequency.setValueAtTime(150, audioCtx.currentTime);
-            osc.frequency.exponentialRampToValueAtTime(30, audioCtx.currentTime + 0.15);
-            
-            gain.gain.setValueAtTime(1, audioCtx.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.15);
+            osc.type = 'sine'; 
+            osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+            gain.gain.setValueAtTime(0, audioCtx.currentTime);
+            gain.gain.linearRampToValueAtTime(0.2, audioCtx.currentTime + 1.0);
+            gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 3.5);
             
             osc.start();
-            osc.stop(audioCtx.currentTime + 0.15);
+            osc.stop(audioCtx.currentTime + 3.5);
         }
 
-        document.getElementById('startBtn').addEventListener('click', () => {
-            document.getElementById('overlay').style.display = 'none';
-            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-            isPlaying = true;
-            lastBeat = performance.now();
-            gameLoop(performance.now());
-        });
-
         function update(time) {
-            if (isPlaying && time - lastBeat > beatInterval) {
-                playSynthKick();
+            if (audioCtx && time - lastBeat > beatInterval) {
+                playSoothingChord();
                 lastBeat = time;
                 beatFlash = 1.0; 
             }
-            if (beatFlash > 0) beatFlash -= 0.04;
+            if (beatFlash > 0) beatFlash -= 0.005;
 
             player.vy += 0.8; 
             player.x += player.vx;
             player.y += player.vy;
 
-            if (keys['ArrowLeft'] || keys['KeyA']) player.vx = -player.speed;
-            else if (keys['ArrowRight'] || keys['KeyD']) player.vx = player.speed;
-            else player.vx *= 0.8; 
+            // Ruch
+            if (keys['ArrowLeft'] || keys['KeyA']) {
+                player.vx = -player.speed;
+                lastDir = 'left';
+            } else if (keys['ArrowRight'] || keys['KeyD']) {
+                player.vx = player.speed;
+                lastDir = 'right';
+            } else {
+                player.vx *= 0.8; 
+            }
 
             if ((keys['ArrowUp'] || keys['KeyW'] || keys['Space']) && player.grounded) {
                 player.vy = player.jumpPower;
@@ -148,32 +230,102 @@
                 }
             }
 
-            if (player.x > canvas.width) player.x = -player.width;
-            if (player.x + player.width < 0) player.x = canvas.width;
-            if (player.y > canvas.height) {
+            if (player.x < 0) player.x = 0;
+
+            if (player.x > maxPlayerX) {
+                maxPlayerX = player.x;
+                const newScore = Math.floor((maxPlayerX - 100) / 50);
+                if (newScore > score) {
+                    score = newScore;
+                    scoreDisplay.innerText = `Punkty: ${score}`;
+                }
+            }
+
+            if (player.y > canvas.height + 100) {
                 player.x = 100;
                 player.y = 200;
                 player.vy = 0;
+                maxPlayerX = 100; 
+                score = 0;
+                scoreDisplay.innerText = `Punkty: ${score}`;
+            }
+
+            cameraX = player.x - canvas.width / 3;
+            if (cameraX < 0) cameraX = 0;
+
+            // Logika animacji
+            if (player.grounded) {
+                animCounter++;
+                if (Math.abs(player.vx) > 0.5) {
+                    if (animCounter > 5) { // Szybkość biegu
+                        frame = (frame + 1) % 4;
+                        animCounter = 0;
+                    }
+                } else {
+                    if (animCounter > 15) { // Szybkość animacji w spoczynku
+                        frame = (frame + 1) % 4;
+                        animCounter = 0;
+                    }
+                }
+            } else {
+                frame = 1; // Klatka w locie (możesz zmienić np. na 0, 1, 2 lub 3 w rzędzie skoku)
             }
         }
 
         function draw() {
-            const bgVal = Math.floor(17 + beatFlash * 30);
-            ctx.fillStyle = `rgb(${bgVal}, ${bgVal}, ${bgVal})`;
+            const bgVal = Math.floor(5 + beatFlash * 15);
+            ctx.fillStyle = `rgb(5, 5, ${bgVal + 10})`;
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+            ctx.save();
+            ctx.translate(-cameraX, 0);
+
             for (let p of platforms) {
-                ctx.fillStyle = p.color;
-                ctx.shadowBlur = 10 + beatFlash * 25;
-                ctx.shadowColor = p.color;
-                ctx.fillRect(p.x, p.y, p.w, p.h);
+                if (p.x + p.w > cameraX && p.x < cameraX + canvas.width) {
+                    ctx.fillStyle = p.color;
+                    ctx.shadowBlur = 10 + beatFlash * 15;
+                    ctx.shadowColor = p.color;
+                    ctx.fillRect(p.x, p.y, p.w, p.h);
+                }
             }
 
-            ctx.fillStyle = player.color;
-            ctx.shadowBlur = 15 + beatFlash * 15;
-            ctx.shadowColor = player.color;
-            ctx.fillRect(player.x, player.y, player.width, player.height);
-            ctx.shadowBlur = 0; 
+            // RYSOWANIE POSTACI (SPRITESHEET)
+            ctx.save();
+            // Przesuwamy punkt środkowy rysowania na środek gracza
+            ctx.translate(player.x + player.width / 2, player.y + player.height / 2);
+            
+            // Odbicie lustrzane, jeśli pies idzie w lewo
+            if (lastDir === 'left') {
+                ctx.scale(-1, 1);
+            }
+
+            if (playerImg.complete && playerImg.width > 0) {
+                const frameW = playerImg.width / 4;
+                const frameH = playerImg.height / 3;
+                let row = 0;
+                
+                if (!player.grounded) {
+                    row = 2; // 3 rząd to skok (indeks 2)
+                } else if (Math.abs(player.vx) > 0.5) {
+                    row = 1; // 2 rząd to bieg (indeks 1)
+                } else {
+                    row = 0; // 1 rząd to stanie (indeks 0)
+                }
+
+                // Rysujemy klatkę (od przesuniętego środka, by zachować poprawne kolizje)
+                ctx.drawImage(
+                    playerImg,
+                    frame * frameW, row * frameH, frameW, frameH,
+                    -player.width / 2, -player.height / 2, player.width, player.height
+                );
+            } else {
+                // Jeśli obrazek jeszcze się ładuje lub nie został znaleziony - rysujemy zastępczy kwadrat
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(-player.width / 2, -player.height / 2, player.width, player.height);
+            }
+            ctx.restore(); // Koniec transformacji gracza
+            
+            ctx.restore(); // Koniec transformacji kamery
         }
 
         function gameLoop(time) {
@@ -185,9 +337,10 @@
         window.addEventListener('resize', () => {
             canvas.width = window.innerWidth;
             canvas.height = window.innerHeight;
-            platforms[0].w = canvas.width;
-            platforms[0].y = canvas.height - 50;
+            generateMap(); 
         });
+
+        gameLoop(performance.now());
     </script>
 </body>
 </html>

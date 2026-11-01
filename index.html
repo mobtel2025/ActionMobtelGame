@@ -63,7 +63,7 @@
         }
         #bossPanel {
             border-color: rgba(255, 0, 85, 0.5);
-            display: none; /* Pokazywane tylko przy bossie */
+            display: none; 
         }
         #bossPanel .heart {
             background: #ff3300;
@@ -75,7 +75,7 @@
         }
         #scoreDisplay {
             position: absolute;
-            top: 20px;
+            top: 85px; /* Obniżono, aby nie nakładało się na pasek życia */
             width: 100%;
             text-align: center;
             color: #00ffff;
@@ -219,15 +219,11 @@
 
         const playerImg = new Image();
         playerImg.src = 'Aleks.jpg'; 
-        playerImg.onerror = () => {
-            console.error("BRAK OBRAZKA: Upewnij się, że plik Aleks.jpg znajduje się w tym samym folderze!");
-        };
+        playerImg.onerror = () => { console.error("Brak pliku Aleks.jpg"); };
 
         const bossImg = new Image();
         bossImg.src = 'black.jpg';
-        bossImg.onerror = () => {
-            console.error("BRAK OBRAZKA: Upewnij się, że plik black.jpg znajduje się w tym samym folderze!");
-        };
+        bossImg.onerror = () => { console.error("Brak pliku black.jpg"); };
         
         let audioCtx;
         let beatInterval = 500; 
@@ -251,13 +247,12 @@
         let gameState = 'playing'; 
         let topScores = JSON.parse(localStorage.getItem('neonJumperTopScores')) || [];
 
-        // Statystyki / walka z Bossem
         const maxLives = 3;
         let playerLives = maxLives;
         let bossLives = maxLives;
-        let bossTriggered = false; // Czy gracz dotarł do obszaru bossa
-        let bossInvulnerable = 0; // Klatki nieśmiertelności bossa po uderzeniu w legowisko
-        let playerInvulnerable = 0; // Klatki nieśmiertelności gracza po hicie
+        let bossTriggered = false; 
+        let bossInvulnerable = 0; 
+        let playerInvulnerable = 0; 
 
         const player = {
             x: 100, y: 200, width: 60, height: 60,
@@ -265,9 +260,8 @@
             grounded: false, jumps: 0 
         };
 
-        // Parametry Bossa
         const boss = {
-            x: 5200, y: 0, width: 50, height: 50, // Mniejszy kundel
+            x: 5200, y: 0, width: 50, height: 50,
             vx: -3, vy: 0,
             baseX: 5200,
             leftLimit: 4800, rightLimit: 5500,
@@ -275,7 +269,6 @@
             grounded: false
         };
 
-        // Legowisko bossa (Cel ataku)
         const lair = {
             x: 5600, y: 0, width: 90, height: 80,
             color: '#8B4513'
@@ -290,7 +283,7 @@
                 {x: 0, y: ch - 50, w: 1000, h: 50, color: '#ff00ff'},
                 {x: 1200, y: ch - 50, w: 800, h: 50, color: '#00ffff'},
                 {x: 2300, y: ch - 50, w: 1500, h: 50, color: '#ff00ff'},
-                {x: 4100, y: ch - 50, w: 1800, h: 50, color: '#00ffff'}, // Przedłużona ostatnia platforma z bossem i legowiskiem
+                {x: 4100, y: ch - 50, w: 1800, h: 50, color: '#00ffff'}, 
 
                 {x: 350, y: ch - 180, w: 120, h: 20, color: '#00ff00'},
                 {x: 600, y: ch - 300, w: 120, h: 20, color: '#ffff00'},
@@ -307,7 +300,6 @@
                 {x: 3750, y: ch - 380, w: 100, h: 20, color: '#ff9900'}
             ];
 
-            // Pozycjonowanie bossa i legowiska na ostatniej dużej platformie
             boss.y = ch - 50 - boss.height;
             boss.baseX = 5200;
             boss.x = boss.baseX;
@@ -318,7 +310,7 @@
             lair.x = 5600;
 
             bones = [];
-            for (let i = 1; i < platforms.length - 1; i++) { // nie generujemy kości na arenie Bossa
+            for (let i = 1; i < platforms.length - 1; i++) { 
                 let p = platforms[i];
                 if (Math.random() > 0.3) { 
                     let count = Math.floor(Math.random() * 3) + 1; 
@@ -332,145 +324,146 @@
         }
         generateMap();
 
+        function initAudio() {
+            try {
+                if (!audioCtx) {
+                    const AudioContext = window.AudioContext || window.webkitAudioContext;
+                    if (AudioContext) {
+                        audioCtx = new AudioContext();
+                        lastBeat = performance.now();
+                        playChillBeat();
+                    }
+                }
+                if (audioCtx && audioCtx.state === 'suspended') {
+                    audioCtx.resume();
+                }
+            } catch (e) {
+                console.warn("Dźwięk wyłączony lub zablokowany przez przeglądarkę", e);
+            }
+        }
+
+        window.addEventListener('keydown', e => { 
+            if(gameState === 'playing') { 
+                keys[e.code] = true; 
+                initAudio(); 
+            }
+        });
+        window.addEventListener('keyup', e => keys[e.code] = false);
+
+        function bindControl(btnId, keyName) {
+            const btn = document.getElementById(btnId);
+            const press = (e) => { 
+                e.preventDefault(); 
+                if(gameState === 'playing'){ 
+                    keys[keyName] = true; // Zawsze najpierw aktywuj ruch
+                    initAudio(); // Dopiero potem próbuj dźwięk
+                }
+            };
+            const release = (e) => { e.preventDefault(); keys[keyName] = false; };
+            
+            btn.addEventListener('touchstart', press, {passive: false});
+            btn.addEventListener('touchend', release, {passive: false});
+            btn.addEventListener('mousedown', press);
+            btn.addEventListener('mouseup', release);
+            btn.addEventListener('mouseleave', release);
+        }
+
+        bindControl('btnLeft', 'ArrowLeft');
+        bindControl('btnRight', 'ArrowRight');
+        bindControl('btnJump', 'ArrowUp');
+
         function playChillBeat() {
             if(!audioCtx) return;
-            const t = audioCtx.currentTime;
+            try {
+                const t = audioCtx.currentTime;
+                const chords = [[261.63, 329.63, 392.00], [220.00, 261.63, 329.63], [174.61, 220.00, 261.63], [196.00, 246.94, 293.66]];
+                const currentChord = chords[Math.floor(beatStep / 4) % chords.length];
 
-            const chords = [
-                [261.63, 329.63, 392.00], 
-                [220.00, 261.63, 329.63], 
-                [174.61, 220.00, 261.63], 
-                [196.00, 246.94, 293.66]  
-            ];
-            
-            const currentChord = chords[Math.floor(beatStep / 4) % chords.length];
-
-            if (beatStep % 4 === 0) {
-                currentChord.forEach(freq => {
-                    const osc = audioCtx.createOscillator();
-                    const gain = audioCtx.createGain();
-                    osc.type = 'sine';
-                    osc.frequency.setValueAtTime(freq, t);
-                    osc.connect(gain);
-                    gain.connect(audioCtx.destination);
-                    
-                    gain.gain.setValueAtTime(0, t);
-                    gain.gain.linearRampToValueAtTime(0.1, t + 0.5); 
-                    gain.gain.linearRampToValueAtTime(0, t + 2.0);   
-                    
-                    osc.start(t);
-                    osc.stop(t + 2.0);
-                });
-            }
-
-            if (beatStep % 2 === 0) {
-                const kick = audioCtx.createOscillator();
-                const kickGain = audioCtx.createGain();
-                kick.connect(kickGain);
-                kickGain.connect(audioCtx.destination);
-                kick.frequency.setValueAtTime(100, t);
-                kick.frequency.exponentialRampToValueAtTime(0.01, t + 0.2);
-                kickGain.gain.setValueAtTime(0.4, t);
-                kickGain.gain.exponentialRampToValueAtTime(0.01, t + 0.2);
-                kick.start(t);
-                kick.stop(t + 0.2);
-            } else {
-                const hat = audioCtx.createOscillator();
-                const hatGain = audioCtx.createGain();
-                const hatFilter = audioCtx.createBiquadFilter();
-                hat.type = 'square';
-                hat.frequency.setValueAtTime(800, t);
-                hatFilter.type = 'bandpass';
-                hatFilter.frequency.value = 3000;
-                hat.connect(hatFilter);
-                hatFilter.connect(hatGain);
-                hatGain.connect(audioCtx.destination);
-                hatGain.gain.setValueAtTime(0.05, t);
-                hatGain.gain.exponentialRampToValueAtTime(0.01, t + 0.1);
-                hat.start(t);
-                hat.stop(t + 0.1);
-            }
-
-            const melSeq = [392.00, 523.25, 659.25, 523.25];
-            const melFreq = melSeq[beatStep % melSeq.length];
-            const melOsc = audioCtx.createOscillator();
-            const melGain = audioCtx.createGain();
-            melOsc.type = 'triangle';
-            melOsc.frequency.setValueAtTime(melFreq, t);
-            melOsc.connect(melGain);
-            melGain.connect(audioCtx.destination);
-            melGain.gain.setValueAtTime(0.05, t);
-            melGain.gain.linearRampToValueAtTime(0, t + 0.3);
-            melOsc.start(t);
-            melOsc.stop(t + 0.3);
-
-            beatStep++;
+                if (beatStep % 4 === 0) {
+                    currentChord.forEach(freq => {
+                        const osc = audioCtx.createOscillator();
+                        const gain = audioCtx.createGain();
+                        osc.type = 'sine';
+                        osc.frequency.setValueAtTime(freq, t);
+                        osc.connect(gain);
+                        gain.connect(audioCtx.destination);
+                        gain.gain.setValueAtTime(0, t);
+                        gain.gain.linearRampToValueAtTime(0.1, t + 0.5); 
+                        gain.gain.linearRampToValueAtTime(0, t + 2.0);   
+                        osc.start(t);
+                        osc.stop(t + 2.0);
+                    });
+                }
+                beatStep++;
+            } catch(e){}
         }
 
         function playBoneSound() {
             if(!audioCtx) return;
-            const osc = audioCtx.createOscillator();
-            const gain = audioCtx.createGain();
-            osc.connect(gain);
-            gain.connect(audioCtx.destination);
-            
-            osc.type = 'triangle';
-            osc.frequency.setValueAtTime(600, audioCtx.currentTime);
-            osc.frequency.exponentialRampToValueAtTime(1200, audioCtx.currentTime + 0.1);
-            
-            gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
-            
-            osc.start();
-            osc.stop(audioCtx.currentTime + 0.1);
+            try {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(600, audioCtx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(1200, audioCtx.currentTime + 0.1);
+                gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.1);
+            } catch(e){}
         }
         
         function playJumpSound() {
             if(!audioCtx) return;
-            const osc = audioCtx.createOscillator();
-            const gain = audioCtx.createGain();
-            osc.connect(gain);
-            gain.connect(audioCtx.destination);
-            
-            osc.type = 'sine';
-            osc.frequency.setValueAtTime(300, audioCtx.currentTime);
-            osc.frequency.exponentialRampToValueAtTime(600, audioCtx.currentTime + 0.1);
-            
-            gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
-            
-            osc.start();
-            osc.stop(audioCtx.currentTime + 0.1);
+            try {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(300, audioCtx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(600, audioCtx.currentTime + 0.1);
+                gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.1);
+            } catch(e){}
         }
 
         function playHurtSound() {
             if(!audioCtx) return;
-            const osc = audioCtx.createOscillator();
-            const gain = audioCtx.createGain();
-            osc.connect(gain);
-            gain.connect(audioCtx.destination);
-            osc.type = 'sawtooth';
-            osc.frequency.setValueAtTime(150, audioCtx.currentTime);
-            osc.frequency.linearRampToValueAtTime(60, audioCtx.currentTime + 0.15);
-            gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
-            gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.15);
-            osc.start();
-            osc.stop(audioCtx.currentTime + 0.15);
+            try {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(150, audioCtx.currentTime);
+                osc.frequency.linearRampToValueAtTime(60, audioCtx.currentTime + 0.15);
+                gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+                gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.15);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.15);
+            } catch(e){}
         }
 
         function playLairHitSound() {
             if(!audioCtx) return;
-            const osc = audioCtx.createOscillator();
-            const gain = audioCtx.createGain();
-            osc.connect(gain);
-            gain.connect(audioCtx.destination);
-            osc.type = 'square';
-            osc.frequency.setValueAtTime(350, audioCtx.currentTime);
-            osc.frequency.exponentialRampToValueAtTime(50, audioCtx.currentTime + 0.35);
-            gain.gain.setValueAtTime(0.4, audioCtx.currentTime);
-            gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.35);
-            osc.start();
-            osc.stop(audioCtx.currentTime + 0.35);
+            try {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(350, audioCtx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(50, audioCtx.currentTime + 0.35);
+                gain.gain.setValueAtTime(0.4, audioCtx.currentTime);
+                gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.35);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.35);
+            } catch(e){}
         }
 
         function updateScore() {
@@ -540,7 +533,7 @@
         function handlePlayerHurt() {
             if (playerInvulnerable > 0) return;
             playerLives--;
-            playerInvulnerable = 90; // Klatki nieśmiertelności (~1.5s)
+            playerInvulnerable = 90; 
             playHurtSound();
             updateHUD();
 
@@ -552,12 +545,11 @@
         function handleLairHit() {
             if (bossInvulnerable > 0) return;
             bossLives--;
-            bossInvulnerable = 120; // Długie 2 sekundy odporności dla bossa/legowiska po hicie
+            bossInvulnerable = 120; 
             playLairHitSound();
             updateHUD();
 
             if (bossLives <= 0) {
-                // Dodajemy bonus za pokonanie bossa
                 boneScore += 500;
                 updateScore();
                 endGame(true);
@@ -597,7 +589,6 @@
             player.x += player.vx;
             player.y += player.vy;
 
-            // Ruch poziomy gracza
             if (keys['ArrowLeft'] || keys['KeyA']) {
                 player.vx = -player.speed;
                 lastDir = 'left';
@@ -608,7 +599,6 @@
                 player.vx *= 0.8; 
             }
 
-            // Podwójny skok
             let isJumpDown = keys['ArrowUp'] || keys['KeyW'] || keys['Space'];
             if (isJumpDown && !jumpKeyWasDown) {
                 if (player.grounded) {
@@ -626,7 +616,6 @@
 
             player.grounded = false;
 
-            // Kolizje gracza z platformami
             for (let p of platforms) {
                 if (player.x < p.x + p.w && player.x + player.width > p.x &&
                     player.y < p.y + p.h && player.y + player.height > p.y) {
@@ -640,7 +629,6 @@
                 }
             }
 
-            // Ruch, sztuczna inteligencja i fizyka BOSSA (black.jpg)
             if (player.x > 4100 && !bossTriggered) {
                 bossTriggered = true;
                 document.getElementById('bossPanel').style.display = 'block';
@@ -648,11 +636,10 @@
             }
 
             if (bossTriggered) {
-                boss.vy += 0.8; // Grawitacja bossa
+                boss.vy += 0.8; 
                 boss.x += boss.vx;
                 boss.y += boss.vy;
 
-                // Zawracanie na krawędziach areny
                 if (boss.x < boss.leftLimit) {
                     boss.vx = Math.abs(boss.vx);
                     boss.lastDir = 'right';
@@ -662,8 +649,7 @@
                 }
 
                 boss.grounded = false;
-                // Kolizje bossa z platformami (ostatnia platforma)
-                let ap = platforms[3]; // ost. platforma
+                let ap = platforms[3]; 
                 if (boss.x < ap.x + ap.w && boss.x + boss.width > ap.x &&
                     boss.y < ap.y + ap.h && boss.y + boss.height > ap.y) {
                     if (boss.vy > 0 && boss.y + boss.height - boss.vy <= ap.y) {
@@ -671,28 +657,22 @@
                         boss.vy = 0;
                         boss.grounded = true;
 
-                        // Losowy skok Bossa, jeśli porusza się w stronę gracza
                         if (Math.random() < 0.015) {
                             boss.vy = -12;
                         }
                     }
                 }
 
-                // Kolizja Aleksa z czarnym kundlem (otrzymanie obrażeń)
                 if (player.x < boss.x + boss.width && player.x + player.width > boss.x &&
                     player.y < boss.y + boss.height && player.y + player.height > boss.y) {
                     handlePlayerHurt();
                 }
 
-                // Kolizja Aleksa z legowiskiem (boss hurt)
                 if (player.x < lair.x + lair.width && player.x + player.width > lair.x &&
                     player.y < lair.y + lair.height && player.y + player.height > lair.y) {
-                    
-                    // Bezpośredni kontakt z legowiskiem zadaje Bossowi obrażenia
                     handleLairHit();
                 }
 
-                // Aktualizacja klatek animacji czarnego psa
                 if (boss.grounded) {
                     boss.animCounter++;
                     if (boss.animCounter > 6) {
@@ -704,7 +684,6 @@
                 }
             }
 
-            // Kolizje z kośćmi
             for (let b of bones) {
                 if (!b.collected) {
                     if (player.x < b.x + b.w && player.x + player.width > b.x &&
@@ -725,10 +704,9 @@
                 updateScore();
             }
 
-            // Śmierć przez upadek z platformy
             if (player.y > canvas.height + 100) {
                 handlePlayerHurt();
-                if (playerLives > 0) { // Natychmiastowe odrodzenie na początku platformy
+                if (playerLives > 0) { 
                     player.x = cameraX + 100;
                     player.y = 100;
                     player.vy = 0;
@@ -764,7 +742,6 @@
             ctx.save();
             ctx.translate(-cameraX, 0);
 
-            // Rysowanie platform
             for (let p of platforms) {
                 if (p.x + p.w > cameraX && p.x < cameraX + canvas.width) {
                     ctx.fillStyle = p.color;
@@ -774,7 +751,6 @@
                 }
             }
 
-            // Rysowanie kości
             ctx.shadowBlur = 5;
             ctx.shadowColor = '#ffffff';
             ctx.fillStyle = '#ffffff';
@@ -790,12 +766,10 @@
                 }
             }
 
-            // RYSOWANIE LEGOWISKA BOSSA (SZAŁAS)
             if (bossTriggered) {
                 ctx.shadowBlur = bossInvulnerable > 0 ? 15 : 0;
                 ctx.shadowColor = '#ff3300';
                 
-                // Trójkątny dach legowiska (Szałas z gałęzi i kości)
                 ctx.fillStyle = '#654321';
                 ctx.beginPath();
                 ctx.moveTo(lair.x + lair.width / 2, lair.y);
@@ -804,7 +778,6 @@
                 ctx.closePath();
                 ctx.fill();
 
-                // Ciemne wejście do legowiska
                 ctx.fillStyle = '#221100';
                 ctx.beginPath();
                 ctx.moveTo(lair.x + lair.width / 2, lair.y + 35);
@@ -813,7 +786,6 @@
                 ctx.closePath();
                 ctx.fill();
 
-                // Dodatkowe dekoracje (np. kości nad wejściem)
                 ctx.fillStyle = '#ffffff';
                 ctx.fillRect(lair.x + lair.width / 2 - 12, lair.y + 30, 24, 6);
                 ctx.beginPath();
@@ -822,12 +794,10 @@
                 ctx.fill();
             }
 
-            // RYSOWANIE BOSSA (black.jpg)
             if (bossTriggered && bossLives > 0) {
                 ctx.save();
                 ctx.translate(boss.x + boss.width / 2, boss.y + boss.height / 2);
                 
-                // Odbicie lustrzane bossa (boss jest skierowany w lewo domyślnie, więc odwracamy dla 'right')
                 if (boss.lastDir === 'right') {
                     ctx.scale(-1, 1);
                 }
@@ -841,11 +811,11 @@
                     let row = 0;
                     
                     if (!boss.grounded) {
-                        row = 2; // Skok
+                        row = 2; 
                     } else if (Math.abs(boss.vx) > 0.5) {
-                        row = 1; // Bieg
+                        row = 1; 
                     } else {
-                        row = 0; // Stanie
+                        row = 0; 
                     }
 
                     ctx.drawImage(
@@ -854,7 +824,6 @@
                         -boss.width / 2, -boss.height / 2, boss.width, boss.height
                     );
                 } else {
-                    // Czerwono-czarny rezerwowy kwadrat bossa
                     ctx.fillStyle = '#330000';
                     ctx.fillRect(-boss.width / 2, -boss.height / 2, boss.width, boss.height);
                     ctx.fillStyle = '#ff0000';
@@ -863,7 +832,6 @@
                 ctx.restore();
             }
 
-            // RYSOWANIE GRACZA (Aleks.jpg)
             ctx.save();
             ctx.translate(player.x + player.width / 2, player.y + player.height / 2);
             

@@ -11,7 +11,6 @@
             width: 100%;
             height: 100%;
             overflow: hidden;
-            /* Kolor idealnie dopasowany do tła pliku 69477.jpg */
             background-color: #7ac5e8; 
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             touch-action: none;
@@ -66,6 +65,53 @@
             box-shadow: 0 0 25px #00ffff;
             transform: scale(0.95);
         }
+
+        /* Style dla ekranów końca gry i Top 10 */
+        .overlay {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 20;
+            color: #00ffff;
+            text-align: center;
+        }
+        .overlay h1 {
+            text-shadow: 0 0 15px #00ffff;
+            margin-bottom: 20px;
+            font-size: 40px;
+            margin-top: 0;
+        }
+        .overlay p {
+            font-size: 24px; margin-bottom: 20px;
+        }
+        .overlay input {
+            padding: 10px; font-size: 20px; border: 2px solid #00ffff;
+            background: rgba(0,0,0,0.5); color: #fff; border-radius: 5px; 
+            text-align: center; margin-bottom: 20px; outline: none;
+            user-select: auto;
+        }
+        .overlay button {
+            padding: 10px 30px; font-size: 24px; border: 2px solid #00ffff;
+            background: rgba(0, 255, 255, 0.1); color: #00ffff;
+            border-radius: 10px; cursor: pointer; text-shadow: 0 0 10px #00ffff;
+            box-shadow: 0 0 15px rgba(0, 255, 255, 0.3); transition: 0.2s;
+            margin-top: 10px;
+        }
+        .overlay button:active {
+            transform: scale(0.95); background: rgba(0, 255, 255, 0.4);
+        }
+        #leaderboardList {
+            list-style: none; padding: 0; font-size: 22px; text-align: left;
+            margin-bottom: 30px; line-height: 1.5; width: 320px; max-height: 50vh; overflow-y: auto;
+        }
+        #leaderboardList li {
+            display: flex; justify-content: space-between;
+            border-bottom: 1px solid rgba(0, 255, 255, 0.3); padding: 8px 0;
+        }
     </style>
 </head>
 <body>
@@ -78,6 +124,20 @@
     </div>
     <div id="controls-right" class="controls-container">
         <div class="control-btn" id="btnJump">▲</div>
+    </div>
+
+    <!-- Ekrany UI -->
+    <div id="gameOverScreen" class="overlay">
+        <h1>Koniec Gry!</h1>
+        <p>Twój wynik: <span id="finalScore">0</span> pkt</p>
+        <input type="text" id="playerName" placeholder="Wpisz swój nick" maxlength="15">
+        <button id="btnSubmitScore">Zapisz wynik</button>
+    </div>
+
+    <div id="leaderboardScreen" class="overlay">
+        <h1>Top 10 Graczy</h1>
+        <ul id="leaderboardList"></ul>
+        <button id="btnRestart">Zagraj ponownie</button>
     </div>
 
     <script>
@@ -95,6 +155,8 @@
         let beatFlash = 0;
         let cameraX = 0;
         
+        let distanceScore = 0;
+        let boneScore = 0;
         let score = 0;
         let maxPlayerX = 100;
         const scoreDisplay = document.getElementById('scoreDisplay');
@@ -104,6 +166,10 @@
         let frame = 0;
         let animCounter = 0;
         let lastDir = 'right';
+
+        // Stan gry
+        let gameState = 'playing'; // 'playing', 'gameover', 'leaderboard'
+        let topScores = JSON.parse(localStorage.getItem('neonJumperTopScores')) || [];
 
         function initAudio() {
             if (!audioCtx) {
@@ -116,12 +182,14 @@
             }
         }
 
-        window.addEventListener('keydown', e => { initAudio(); keys[e.code] = true; });
+        window.addEventListener('keydown', e => { 
+            if(gameState === 'playing') { initAudio(); keys[e.code] = true; }
+        });
         window.addEventListener('keyup', e => keys[e.code] = false);
 
         function bindControl(btnId, keyName) {
             const btn = document.getElementById(btnId);
-            const press = (e) => { e.preventDefault(); initAudio(); keys[keyName] = true; };
+            const press = (e) => { e.preventDefault(); if(gameState === 'playing'){ initAudio(); keys[keyName] = true; }};
             const release = (e) => { e.preventDefault(); keys[keyName] = false; };
             
             btn.addEventListener('touchstart', press, {passive: false});
@@ -142,6 +210,8 @@
         };
 
         let platforms = [];
+        let bones = [];
+
         function generateMap() {
             const ch = canvas.height - 120; 
             platforms = [
@@ -164,6 +234,19 @@
                 {x: 3450, y: ch - 250, w: 100, h: 20, color: '#00ffff'},
                 {x: 3750, y: ch - 380, w: 100, h: 20, color: '#ff9900'}
             ];
+
+            bones = [];
+            for (let i = 1; i < platforms.length; i++) {
+                let p = platforms[i];
+                if (Math.random() > 0.3) { 
+                    let count = Math.floor(Math.random() * 3) + 1; 
+                    for (let j = 0; j < count; j++) {
+                        let bx = p.x + 20 + Math.random() * (p.w - 50);
+                        let by = p.y - 40 - Math.random() * 60; 
+                        bones.push({x: bx, y: by, w: 30, h: 20, collected: false});
+                    }
+                }
+            }
         }
         generateMap();
 
@@ -185,6 +268,69 @@
             osc.start();
             osc.stop(audioCtx.currentTime + 3.5);
         }
+
+        function playBoneSound() {
+            if(!audioCtx) return;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(600, audioCtx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(1200, audioCtx.currentTime + 0.1);
+            
+            gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+            
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.1);
+        }
+
+        function updateScore() {
+            score = distanceScore + boneScore;
+            scoreDisplay.innerText = `Punkty: ${score}`;
+        }
+
+        // Obsługa interfejsu rankingu
+        document.getElementById('btnSubmitScore').addEventListener('click', () => {
+            const nameInput = document.getElementById('playerName').value.trim();
+            const playerName = nameInput === '' ? 'Anonim' : nameInput;
+            
+            topScores.push({ name: playerName, score: score });
+            topScores.sort((a, b) => b.score - a.score);
+            topScores = topScores.slice(0, 10);
+            localStorage.setItem('neonJumperTopScores', JSON.stringify(topScores));
+            
+            document.getElementById('gameOverScreen').style.display = 'none';
+            document.getElementById('leaderboardScreen').style.display = 'flex';
+            
+            const list = document.getElementById('leaderboardList');
+            list.innerHTML = '';
+            topScores.forEach((entry, idx) => {
+                list.innerHTML += `<li><span>${idx + 1}. ${entry.name}</span> <span>${entry.score} pkt</span></li>`;
+            });
+        });
+
+        document.getElementById('btnRestart').addEventListener('click', () => {
+            document.getElementById('leaderboardScreen').style.display = 'none';
+            player.x = 100;
+            player.y = 200;
+            player.vy = 0;
+            player.vx = 0;
+            maxPlayerX = 100; 
+            distanceScore = 0;
+            boneScore = 0;
+            
+            // Generujemy mapę i kości na nowo
+            generateMap(); 
+            updateScore();
+            
+            gameState = 'playing';
+            
+            // Zerowanie klawiszy (zapobiega biegnięciu od razu po restarcie)
+            for(let k in keys) keys[k] = false;
+        });
 
         function update(time) {
             if (audioCtx && time - lastBeat > beatInterval) {
@@ -227,24 +373,33 @@
                 }
             }
 
+            for (let b of bones) {
+                if (!b.collected) {
+                    if (player.x < b.x + b.w && player.x + player.width > b.x &&
+                        player.y < b.y + b.h && player.y + player.height > b.y) {
+                        b.collected = true;
+                        boneScore += 20; 
+                        playBoneSound();
+                        updateScore();
+                    }
+                }
+            }
+
             if (player.x < 0) player.x = 0;
 
             if (player.x > maxPlayerX) {
                 maxPlayerX = player.x;
-                const newScore = Math.floor((maxPlayerX - 100) / 50);
-                if (newScore > score) {
-                    score = newScore;
-                    scoreDisplay.innerText = `Punkty: ${score}`;
-                }
+                distanceScore = Math.floor((maxPlayerX - 100) / 50);
+                updateScore();
             }
 
+            // Moment upadku (Koniec gry)
             if (player.y > canvas.height + 100) {
-                player.x = 100;
-                player.y = 200;
-                player.vy = 0;
-                maxPlayerX = 100; 
-                score = 0;
-                scoreDisplay.innerText = `Punkty: ${score}`;
+                gameState = 'gameover';
+                document.getElementById('finalScore').innerText = score;
+                document.getElementById('gameOverScreen').style.display = 'flex';
+                document.getElementById('playerName').value = '';
+                document.getElementById('playerName').focus();
             }
 
             cameraX = player.x - canvas.width / 3;
@@ -269,7 +424,6 @@
         }
 
         function draw() {
-            // Stałe tło wyciągnięte z obrazka 69477.jpg, aby zlikwidować widoczny kwadrat
             ctx.fillStyle = '#7ac5e8';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
@@ -285,6 +439,21 @@
                 }
             }
 
+            ctx.shadowBlur = 5;
+            ctx.shadowColor = '#ffffff';
+            ctx.fillStyle = '#ffffff';
+            for (let b of bones) {
+                if (!b.collected && b.x + b.w > cameraX && b.x < cameraX + canvas.width) {
+                    ctx.beginPath();
+                    ctx.arc(b.x + 6, b.y + 6, 6, 0, Math.PI * 2);
+                    ctx.arc(b.x + 6, b.y + 14, 6, 0, Math.PI * 2);
+                    ctx.arc(b.x + 24, b.y + 6, 6, 0, Math.PI * 2);
+                    ctx.arc(b.x + 24, b.y + 14, 6, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.fillRect(b.x + 6, b.y + 4, 18, 12);
+                }
+            }
+
             ctx.save();
             ctx.translate(player.x + player.width / 2, player.y + player.height / 2);
             
@@ -292,7 +461,6 @@
                 ctx.scale(-1, 1);
             }
 
-            // Likwidacja poświaty dla psa
             ctx.shadowBlur = 0;
             ctx.shadowColor = 'transparent';
 
@@ -324,7 +492,9 @@
         }
 
         function gameLoop(time) {
-            update(time);
+            if (gameState === 'playing') {
+                update(time);
+            }
             draw();
             requestAnimationFrame(gameLoop);
         }
@@ -332,7 +502,9 @@
         window.addEventListener('resize', () => {
             canvas.width = window.innerWidth;
             canvas.height = window.innerHeight;
-            generateMap(); 
+            if (gameState === 'playing') {
+                generateMap(); 
+            }
         });
 
         gameLoop(performance.now());

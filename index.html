@@ -19,6 +19,60 @@
         canvas {
             display: block;
         }
+        #hudContainer {
+            position: absolute;
+            top: 20px;
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            padding: 0 20px;
+            box-sizing: border-box;
+            z-index: 15;
+            pointer-events: none;
+        }
+        .hud-panel {
+            background: rgba(0, 0, 0, 0.5);
+            padding: 10px 15px;
+            border-radius: 8px;
+            border: 1px solid rgba(0, 255, 255, 0.3);
+            color: #fff;
+            min-width: 140px;
+        }
+        .hud-title {
+            font-size: 14px;
+            font-weight: bold;
+            margin-bottom: 5px;
+            text-transform: uppercase;
+        }
+        .hearts-row {
+            display: flex;
+            gap: 5px;
+        }
+        .heart {
+            width: 20px;
+            height: 20px;
+            background: #ff0055;
+            clip-path: polygon(50% 15%, 80% 0%, 100% 30%, 50% 90%, 0% 30%, 20% 0%);
+            box-shadow: 0 0 5px #ff0055;
+            transition: opacity 0.3s;
+        }
+        .heart.lost {
+            opacity: 0.2;
+            background: #444;
+            box-shadow: none;
+        }
+        #bossPanel {
+            border-color: rgba(255, 0, 85, 0.5);
+            display: none; /* Pokazywane tylko przy bossie */
+        }
+        #bossPanel .heart {
+            background: #ff3300;
+            box-shadow: 0 0 5px #ff3300;
+        }
+        #bossPanel .heart.lost {
+            background: #444;
+            box-shadow: none;
+        }
         #scoreDisplay {
             position: absolute;
             top: 20px;
@@ -27,7 +81,7 @@
             color: #00ffff;
             font-size: 28px;
             font-weight: bold;
-            z-index: 15;
+            z-index: 14;
             text-shadow: 0 0 15px #000000, 0 0 5px #000000;
             pointer-events: none;
         }
@@ -114,6 +168,25 @@
     </style>
 </head>
 <body>
+    <div id="hudContainer">
+        <div class="hud-panel" id="playerPanel">
+            <div class="hud-title">Aleks (Gracz)</div>
+            <div class="hearts-row" id="playerHearts">
+                <div class="heart"></div>
+                <div class="heart"></div>
+                <div class="heart"></div>
+            </div>
+        </div>
+        <div class="hud-panel" id="bossPanel">
+            <div class="hud-title" style="color: #ff3300;">Wściekły Kundel</div>
+            <div class="hearts-row" id="bossHearts">
+                <div class="heart"></div>
+                <div class="heart"></div>
+                <div class="heart"></div>
+            </div>
+        </div>
+    </div>
+
     <div id="scoreDisplay">Punkty: 0</div>
     <canvas id="gameCanvas"></canvas>
 
@@ -126,7 +199,7 @@
     </div>
 
     <div id="gameOverScreen" class="overlay">
-        <h1>Koniec Gry!</h1>
+        <h1 id="endGameTitle">Koniec Gry!</h1>
         <p>Twój wynik: <span id="finalScore">0</span> pkt</p>
         <input type="text" id="playerName" placeholder="Wpisz swój nick" maxlength="15">
         <button id="btnSubmitScore">Zapisz wynik</button>
@@ -147,11 +220,17 @@
         const playerImg = new Image();
         playerImg.src = 'Aleks.jpg'; 
         playerImg.onerror = () => {
-            console.error("BRAK OBRAZKA: Upewnij się, że plik Aleks.jpg znajduje się w tym samym folderze, co Twój plik z grą!");
+            console.error("BRAK OBRAZKA: Upewnij się, że plik Aleks.jpg znajduje się w tym samym folderze!");
+        };
+
+        const bossImg = new Image();
+        bossImg.src = 'black.jpg';
+        bossImg.onerror = () => {
+            console.error("BRAK OBRAZKA: Upewnij się, że plik black.jpg znajduje się w tym samym folderze!");
         };
         
         let audioCtx;
-        let beatInterval = 500; // Wolniejsze, przyjemniejsze tempo
+        let beatInterval = 500; 
         let beatStep = 0;
         let lastBeat = 0;
         let beatFlash = 0;
@@ -164,9 +243,7 @@
         const scoreDisplay = document.getElementById('scoreDisplay');
         const keys = {};
 
-        // Flaga dla podwójnego skoku
         let jumpKeyWasDown = false;
-
         let frame = 0;
         let animCounter = 0;
         let lastDir = 'right';
@@ -174,42 +251,34 @@
         let gameState = 'playing'; 
         let topScores = JSON.parse(localStorage.getItem('neonJumperTopScores')) || [];
 
-        function initAudio() {
-            if (!audioCtx) {
-                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-                lastBeat = performance.now();
-                playChillBeat();
-            }
-            if (audioCtx.state === 'suspended') {
-                audioCtx.resume();
-            }
-        }
-
-        window.addEventListener('keydown', e => { 
-            if(gameState === 'playing') { initAudio(); keys[e.code] = true; }
-        });
-        window.addEventListener('keyup', e => keys[e.code] = false);
-
-        function bindControl(btnId, keyName) {
-            const btn = document.getElementById(btnId);
-            const press = (e) => { e.preventDefault(); if(gameState === 'playing'){ initAudio(); keys[keyName] = true; }};
-            const release = (e) => { e.preventDefault(); keys[keyName] = false; };
-            
-            btn.addEventListener('touchstart', press, {passive: false});
-            btn.addEventListener('touchend', release, {passive: false});
-            btn.addEventListener('mousedown', press);
-            btn.addEventListener('mouseup', release);
-            btn.addEventListener('mouseleave', release);
-        }
-
-        bindControl('btnLeft', 'ArrowLeft');
-        bindControl('btnRight', 'ArrowRight');
-        bindControl('btnJump', 'ArrowUp');
+        // Statystyki / walka z Bossem
+        const maxLives = 3;
+        let playerLives = maxLives;
+        let bossLives = maxLives;
+        let bossTriggered = false; // Czy gracz dotarł do obszaru bossa
+        let bossInvulnerable = 0; // Klatki nieśmiertelności bossa po uderzeniu w legowisko
+        let playerInvulnerable = 0; // Klatki nieśmiertelności gracza po hicie
 
         const player = {
             x: 100, y: 200, width: 60, height: 60,
             vx: 0, vy: 0, speed: 7, jumpPower: -15,
-            grounded: false, jumps: 0 // Zmienna do liczenia skoków
+            grounded: false, jumps: 0 
+        };
+
+        // Parametry Bossa
+        const boss = {
+            x: 5200, y: 0, width: 50, height: 50, // Mniejszy kundel
+            vx: -3, vy: 0,
+            baseX: 5200,
+            leftLimit: 4800, rightLimit: 5500,
+            frame: 0, animCounter: 0, lastDir: 'left',
+            grounded: false
+        };
+
+        // Legowisko bossa (Cel ataku)
+        const lair = {
+            x: 5600, y: 0, width: 90, height: 80,
+            color: '#8B4513'
         };
 
         let platforms = [];
@@ -221,7 +290,7 @@
                 {x: 0, y: ch - 50, w: 1000, h: 50, color: '#ff00ff'},
                 {x: 1200, y: ch - 50, w: 800, h: 50, color: '#00ffff'},
                 {x: 2300, y: ch - 50, w: 1500, h: 50, color: '#ff00ff'},
-                {x: 4100, y: ch - 50, w: 2000, h: 50, color: '#00ffff'},
+                {x: 4100, y: ch - 50, w: 1800, h: 50, color: '#00ffff'}, // Przedłużona ostatnia platforma z bossem i legowiskiem
 
                 {x: 350, y: ch - 180, w: 120, h: 20, color: '#00ff00'},
                 {x: 600, y: ch - 300, w: 120, h: 20, color: '#ffff00'},
@@ -238,8 +307,18 @@
                 {x: 3750, y: ch - 380, w: 100, h: 20, color: '#ff9900'}
             ];
 
+            // Pozycjonowanie bossa i legowiska na ostatniej dużej platformie
+            boss.y = ch - 50 - boss.height;
+            boss.baseX = 5200;
+            boss.x = boss.baseX;
+            boss.leftLimit = 4600;
+            boss.rightLimit = 5400;
+
+            lair.y = ch - 50 - lair.height;
+            lair.x = 5600;
+
             bones = [];
-            for (let i = 1; i < platforms.length; i++) {
+            for (let i = 1; i < platforms.length - 1; i++) { // nie generujemy kości na arenie Bossa
                 let p = platforms[i];
                 if (Math.random() > 0.3) { 
                     let count = Math.floor(Math.random() * 3) + 1; 
@@ -257,17 +336,15 @@
             if(!audioCtx) return;
             const t = audioCtx.currentTime;
 
-            // Przyjemne, rozmyte akordy (lo-fi vibe)
             const chords = [
-                [261.63, 329.63, 392.00], // C major
-                [220.00, 261.63, 329.63], // A minor
-                [174.61, 220.00, 261.63], // F major
-                [196.00, 246.94, 293.66]  // G major
+                [261.63, 329.63, 392.00], 
+                [220.00, 261.63, 329.63], 
+                [174.61, 220.00, 261.63], 
+                [196.00, 246.94, 293.66]  
             ];
             
             const currentChord = chords[Math.floor(beatStep / 4) % chords.length];
 
-            // Graj akord co 4 uderzenia (na początku taktu)
             if (beatStep % 4 === 0) {
                 currentChord.forEach(freq => {
                     const osc = audioCtx.createOscillator();
@@ -278,17 +355,15 @@
                     gain.connect(audioCtx.destination);
                     
                     gain.gain.setValueAtTime(0, t);
-                    gain.gain.linearRampToValueAtTime(0.1, t + 0.5); // Miękkie wejście
-                    gain.gain.linearRampToValueAtTime(0, t + 2.0);   // Długie, spokojne wybrzmienie
+                    gain.gain.linearRampToValueAtTime(0.1, t + 0.5); 
+                    gain.gain.linearRampToValueAtTime(0, t + 2.0);   
                     
                     osc.start(t);
                     osc.stop(t + 2.0);
                 });
             }
 
-            // Miękka perkusja
             if (beatStep % 2 === 0) {
-                // Kick (stopa)
                 const kick = audioCtx.createOscillator();
                 const kickGain = audioCtx.createGain();
                 kick.connect(kickGain);
@@ -300,7 +375,6 @@
                 kick.start(t);
                 kick.stop(t + 0.2);
             } else {
-                // Miękki Hi-hat
                 const hat = audioCtx.createOscillator();
                 const hatGain = audioCtx.createGain();
                 const hatFilter = audioCtx.createBiquadFilter();
@@ -317,7 +391,6 @@
                 hat.stop(t + 0.1);
             }
 
-            // Spokojna melodyjka
             const melSeq = [392.00, 523.25, 659.25, 523.25];
             const melFreq = melSeq[beatStep % melSeq.length];
             const melOsc = audioCtx.createOscillator();
@@ -370,9 +443,53 @@
             osc.stop(audioCtx.currentTime + 0.1);
         }
 
+        function playHurtSound() {
+            if(!audioCtx) return;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(150, audioCtx.currentTime);
+            osc.frequency.linearRampToValueAtTime(60, audioCtx.currentTime + 0.15);
+            gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+            gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.15);
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.15);
+        }
+
+        function playLairHitSound() {
+            if(!audioCtx) return;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.type = 'square';
+            osc.frequency.setValueAtTime(350, audioCtx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(50, audioCtx.currentTime + 0.35);
+            gain.gain.setValueAtTime(0.4, audioCtx.currentTime);
+            gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.35);
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.35);
+        }
+
         function updateScore() {
             score = distanceScore + boneScore;
             scoreDisplay.innerText = `Punkty: ${score}`;
+        }
+
+        function updateHUD() {
+            const playerHearts = document.getElementById('playerHearts').children;
+            for(let i=0; i<maxLives; i++) {
+                if(i < playerLives) playerHearts[i].classList.remove('lost');
+                else playerHearts[i].classList.add('lost');
+            }
+
+            const bossHearts = document.getElementById('bossHearts').children;
+            for(let i=0; i<maxLives; i++) {
+                if(i < bossLives) bossHearts[i].classList.remove('lost');
+                else bossHearts[i].classList.add('lost');
+            }
         }
 
         document.getElementById('btnSubmitScore').addEventListener('click', () => {
@@ -401,6 +518,11 @@
             player.vy = 0;
             player.vx = 0;
             player.jumps = 0;
+            playerLives = maxLives;
+            bossLives = maxLives;
+            bossTriggered = false;
+            document.getElementById('bossPanel').style.display = 'none';
+
             maxPlayerX = 100; 
             distanceScore = 0;
             boneScore = 0;
@@ -408,25 +530,74 @@
             
             generateMap(); 
             updateScore();
+            updateHUD();
             
             gameState = 'playing';
             
             for(let k in keys) keys[k] = false;
         });
 
+        function handlePlayerHurt() {
+            if (playerInvulnerable > 0) return;
+            playerLives--;
+            playerInvulnerable = 90; // Klatki nieśmiertelności (~1.5s)
+            playHurtSound();
+            updateHUD();
+
+            if (playerLives <= 0) {
+                endGame(false);
+            }
+        }
+
+        function handleLairHit() {
+            if (bossInvulnerable > 0) return;
+            bossLives--;
+            bossInvulnerable = 120; // Długie 2 sekundy odporności dla bossa/legowiska po hicie
+            playLairHitSound();
+            updateHUD();
+
+            if (bossLives <= 0) {
+                // Dodajemy bonus za pokonanie bossa
+                boneScore += 500;
+                updateScore();
+                endGame(true);
+            }
+        }
+
+        function endGame(isVictory) {
+            gameState = 'gameover';
+            document.getElementById('finalScore').innerText = score;
+            const title = document.getElementById('endGameTitle');
+            if (isVictory) {
+                title.innerText = "Zwycięstwo!";
+                title.style.color = "#00ff88";
+                title.style.textShadow = "0 0 15px #00ff88";
+            } else {
+                title.innerText = "Koniec Gry!";
+                title.style.color = "#ff0055";
+                title.style.textShadow = "0 0 15px #ff0055";
+            }
+            document.getElementById('gameOverScreen').style.display = 'flex';
+            document.getElementById('playerName').value = '';
+            document.getElementById('playerName').focus();
+        }
+
         function update(time) {
             if (audioCtx && time - lastBeat > beatInterval) {
                 playChillBeat();
                 lastBeat = time;
-                beatFlash = (beatStep % 4 === 1) ? 0.5 : 0.1; // Błyska lekko w rytm akordów
+                beatFlash = (beatStep % 4 === 1) ? 0.5 : 0.1; 
             }
             if (beatFlash > 0) beatFlash -= 0.01;
 
-            player.vy += 0.8; // Grawitacja
+            if (playerInvulnerable > 0) playerInvulnerable--;
+            if (bossInvulnerable > 0) bossInvulnerable--;
+
+            player.vy += 0.8; 
             player.x += player.vx;
             player.y += player.vy;
 
-            // Ruch poziomy
+            // Ruch poziomy gracza
             if (keys['ArrowLeft'] || keys['KeyA']) {
                 player.vx = -player.speed;
                 lastDir = 'left';
@@ -437,26 +608,25 @@
                 player.vx *= 0.8; 
             }
 
-            // Obsługa skoku z mechaniką DOUBLE JUMP
+            // Podwójny skok
             let isJumpDown = keys['ArrowUp'] || keys['KeyW'] || keys['Space'];
-            
             if (isJumpDown && !jumpKeyWasDown) {
                 if (player.grounded) {
                     player.vy = player.jumpPower;
                     player.grounded = false;
                     player.jumps = 1;
                     playJumpSound();
-                } else if (player.jumps < 2) { // Podwójny skok w powietrzu
-                    player.vy = player.jumpPower * 0.9; // Drugi skok odrobinę słabszy
+                } else if (player.jumps < 2) { 
+                    player.vy = player.jumpPower * 0.9; 
                     player.jumps = 2;
                     playJumpSound();
                 }
             }
-            jumpKeyWasDown = isJumpDown; // Zapobiega ciągłemu skakaniu przy przytrzymaniu przycisku
+            jumpKeyWasDown = isJumpDown; 
 
             player.grounded = false;
 
-            // Kolizje z platformami
+            // Kolizje gracza z platformami
             for (let p of platforms) {
                 if (player.x < p.x + p.w && player.x + player.width > p.x &&
                     player.y < p.y + p.h && player.y + player.height > p.y) {
@@ -465,11 +635,76 @@
                         player.y = p.y - player.height;
                         player.vy = 0;
                         player.grounded = true;
-                        player.jumps = 0; // Resetujemy skoki po dotknięciu ziemi
+                        player.jumps = 0; 
                     }
                 }
             }
 
+            // Ruch, sztuczna inteligencja i fizyka BOSSA (black.jpg)
+            if (player.x > 4100 && !bossTriggered) {
+                bossTriggered = true;
+                document.getElementById('bossPanel').style.display = 'block';
+                updateHUD();
+            }
+
+            if (bossTriggered) {
+                boss.vy += 0.8; // Grawitacja bossa
+                boss.x += boss.vx;
+                boss.y += boss.vy;
+
+                // Zawracanie na krawędziach areny
+                if (boss.x < boss.leftLimit) {
+                    boss.vx = Math.abs(boss.vx);
+                    boss.lastDir = 'right';
+                } else if (boss.x + boss.width > boss.rightLimit) {
+                    boss.vx = -Math.abs(boss.vx);
+                    boss.lastDir = 'left';
+                }
+
+                boss.grounded = false;
+                // Kolizje bossa z platformami (ostatnia platforma)
+                let ap = platforms[3]; // ost. platforma
+                if (boss.x < ap.x + ap.w && boss.x + boss.width > ap.x &&
+                    boss.y < ap.y + ap.h && boss.y + boss.height > ap.y) {
+                    if (boss.vy > 0 && boss.y + boss.height - boss.vy <= ap.y) {
+                        boss.y = ap.y - boss.height;
+                        boss.vy = 0;
+                        boss.grounded = true;
+
+                        // Losowy skok Bossa, jeśli porusza się w stronę gracza
+                        if (Math.random() < 0.015) {
+                            boss.vy = -12;
+                        }
+                    }
+                }
+
+                // Kolizja Aleksa z czarnym kundlem (otrzymanie obrażeń)
+                if (player.x < boss.x + boss.width && player.x + player.width > boss.x &&
+                    player.y < boss.y + boss.height && player.y + player.height > boss.y) {
+                    handlePlayerHurt();
+                }
+
+                // Kolizja Aleksa z legowiskiem (boss hurt)
+                if (player.x < lair.x + lair.width && player.x + player.width > lair.x &&
+                    player.y < lair.y + lair.height && player.y + player.height > lair.y) {
+                    
+                    // Bezpośredni kontakt z legowiskiem zadaje Bossowi obrażenia
+                    handleLairHit();
+                }
+
+                // Aktualizacja klatek animacji czarnego psa
+                if (boss.grounded) {
+                    boss.animCounter++;
+                    if (boss.animCounter > 6) {
+                        boss.frame = (boss.frame + 1) % 4;
+                        boss.animCounter = 0;
+                    }
+                } else {
+                    boss.frame = 1;
+                }
+            }
+
+            // Kolizje z kośćmi
             for (let b of bones) {
                 if (!b.collected) {
                     if (player.x < b.x + b.w && player.x + player.width > b.x &&
@@ -490,12 +725,15 @@
                 updateScore();
             }
 
+            // Śmierć przez upadek z platformy
             if (player.y > canvas.height + 100) {
-                gameState = 'gameover';
-                document.getElementById('finalScore').innerText = score;
-                document.getElementById('gameOverScreen').style.display = 'flex';
-                document.getElementById('playerName').value = '';
-                document.getElementById('playerName').focus();
+                handlePlayerHurt();
+                if (playerLives > 0) { // Natychmiastowe odrodzenie na początku platformy
+                    player.x = cameraX + 100;
+                    player.y = 100;
+                    player.vy = 0;
+                    player.vx = 0;
+                }
             }
 
             cameraX = player.x - canvas.width / 3;
@@ -526,6 +764,7 @@
             ctx.save();
             ctx.translate(-cameraX, 0);
 
+            // Rysowanie platform
             for (let p of platforms) {
                 if (p.x + p.w > cameraX && p.x < cameraX + canvas.width) {
                     ctx.fillStyle = p.color;
@@ -535,6 +774,7 @@
                 }
             }
 
+            // Rysowanie kości
             ctx.shadowBlur = 5;
             ctx.shadowColor = '#ffffff';
             ctx.fillStyle = '#ffffff';
@@ -550,6 +790,80 @@
                 }
             }
 
+            // RYSOWANIE LEGOWISKA BOSSA (SZAŁAS)
+            if (bossTriggered) {
+                ctx.shadowBlur = bossInvulnerable > 0 ? 15 : 0;
+                ctx.shadowColor = '#ff3300';
+                
+                // Trójkątny dach legowiska (Szałas z gałęzi i kości)
+                ctx.fillStyle = '#654321';
+                ctx.beginPath();
+                ctx.moveTo(lair.x + lair.width / 2, lair.y);
+                ctx.lineTo(lair.x, lair.y + lair.height);
+                ctx.lineTo(lair.x + lair.width, lair.y + lair.height);
+                ctx.closePath();
+                ctx.fill();
+
+                // Ciemne wejście do legowiska
+                ctx.fillStyle = '#221100';
+                ctx.beginPath();
+                ctx.moveTo(lair.x + lair.width / 2, lair.y + 35);
+                ctx.lineTo(lair.x + 25, lair.y + lair.height);
+                ctx.lineTo(lair.x + lair.width - 25, lair.y + lair.height);
+                ctx.closePath();
+                ctx.fill();
+
+                // Dodatkowe dekoracje (np. kości nad wejściem)
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(lair.x + lair.width / 2 - 12, lair.y + 30, 24, 6);
+                ctx.beginPath();
+                ctx.arc(lair.x + lair.width / 2 - 12, lair.y + 33, 4, 0, Math.PI * 2);
+                ctx.arc(lair.x + lair.width / 2 + 12, lair.y + 33, 4, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // RYSOWANIE BOSSA (black.jpg)
+            if (bossTriggered && bossLives > 0) {
+                ctx.save();
+                ctx.translate(boss.x + boss.width / 2, boss.y + boss.height / 2);
+                
+                // Odbicie lustrzane bossa (boss jest skierowany w lewo domyślnie, więc odwracamy dla 'right')
+                if (boss.lastDir === 'right') {
+                    ctx.scale(-1, 1);
+                }
+
+                ctx.shadowBlur = bossInvulnerable > 0 ? 15 : 0;
+                ctx.shadowColor = '#ff0000';
+
+                if (bossImg.complete && bossImg.width > 0) {
+                    const frameW = bossImg.width / 4;
+                    const frameH = bossImg.height / 3;
+                    let row = 0;
+                    
+                    if (!boss.grounded) {
+                        row = 2; // Skok
+                    } else if (Math.abs(boss.vx) > 0.5) {
+                        row = 1; // Bieg
+                    } else {
+                        row = 0; // Stanie
+                    }
+
+                    ctx.drawImage(
+                        bossImg,
+                        boss.frame * frameW, row * frameH, frameW, frameH,
+                        -boss.width / 2, -boss.height / 2, boss.width, boss.height
+                    );
+                } else {
+                    // Czerwono-czarny rezerwowy kwadrat bossa
+                    ctx.fillStyle = '#330000';
+                    ctx.fillRect(-boss.width / 2, -boss.height / 2, boss.width, boss.height);
+                    ctx.fillStyle = '#ff0000';
+                    ctx.fillRect(-boss.width / 2 + 10, -boss.height / 2 + 10, boss.width - 20, boss.height - 20);
+                }
+                ctx.restore();
+            }
+
+            // RYSOWANIE GRACZA (Aleks.jpg)
             ctx.save();
             ctx.translate(player.x + player.width / 2, player.y + player.height / 2);
             
@@ -557,8 +871,8 @@
                 ctx.scale(-1, 1);
             }
 
-            ctx.shadowBlur = 0;
-            ctx.shadowColor = 'transparent';
+            ctx.shadowBlur = playerInvulnerable > 0 ? 15 : 0;
+            ctx.shadowColor = '#ffffff';
 
             if (playerImg.complete && playerImg.width > 0) {
                 const frameW = playerImg.width / 4;
@@ -573,8 +887,6 @@
                     row = 0; 
                 }
 
-                // NAPRAWA LEWITACJI: Obniżenie punktu rysowania obrazka o 12 pikseli, 
-                // żeby zniwelować puste miejsce na dole klatki animacji
                 const Y_OFFSET = 12;
 
                 ctx.drawImage(

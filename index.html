@@ -151,7 +151,7 @@
         };
         
         let audioCtx;
-        let beatInterval = 250; 
+        let beatInterval = 500; // Wolniejsze, przyjemniejsze tempo
         let beatStep = 0;
         let lastBeat = 0;
         let beatFlash = 0;
@@ -164,6 +164,9 @@
         const scoreDisplay = document.getElementById('scoreDisplay');
         const keys = {};
 
+        // Flaga dla podwójnego skoku
+        let jumpKeyWasDown = false;
+
         let frame = 0;
         let animCounter = 0;
         let lastDir = 'right';
@@ -175,7 +178,7 @@
             if (!audioCtx) {
                 audioCtx = new (window.AudioContext || window.webkitAudioContext)();
                 lastBeat = performance.now();
-                playRhythmicBeat();
+                playChillBeat();
             }
             if (audioCtx.state === 'suspended') {
                 audioCtx.resume();
@@ -205,8 +208,8 @@
 
         const player = {
             x: 100, y: 200, width: 60, height: 60,
-            vx: 0, vy: 0, speed: 7, jumpPower: -16,
-            grounded: false
+            vx: 0, vy: 0, speed: 7, jumpPower: -15,
+            grounded: false, jumps: 0 // Zmienna do liczenia skoków
         };
 
         let platforms = [];
@@ -250,53 +253,83 @@
         }
         generateMap();
 
-        function playRhythmicBeat() {
+        function playChillBeat() {
             if(!audioCtx) return;
             const t = audioCtx.currentTime;
 
+            // Przyjemne, rozmyte akordy (lo-fi vibe)
+            const chords = [
+                [261.63, 329.63, 392.00], // C major
+                [220.00, 261.63, 329.63], // A minor
+                [174.61, 220.00, 261.63], // F major
+                [196.00, 246.94, 293.66]  // G major
+            ];
+            
+            const currentChord = chords[Math.floor(beatStep / 4) % chords.length];
+
+            // Graj akord co 4 uderzenia (na początku taktu)
+            if (beatStep % 4 === 0) {
+                currentChord.forEach(freq => {
+                    const osc = audioCtx.createOscillator();
+                    const gain = audioCtx.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(freq, t);
+                    osc.connect(gain);
+                    gain.connect(audioCtx.destination);
+                    
+                    gain.gain.setValueAtTime(0, t);
+                    gain.gain.linearRampToValueAtTime(0.1, t + 0.5); // Miękkie wejście
+                    gain.gain.linearRampToValueAtTime(0, t + 2.0);   // Długie, spokojne wybrzmienie
+                    
+                    osc.start(t);
+                    osc.stop(t + 2.0);
+                });
+            }
+
+            // Miękka perkusja
             if (beatStep % 2 === 0) {
+                // Kick (stopa)
                 const kick = audioCtx.createOscillator();
                 const kickGain = audioCtx.createGain();
                 kick.connect(kickGain);
                 kickGain.connect(audioCtx.destination);
-                kick.frequency.setValueAtTime(150, t);
-                kick.frequency.exponentialRampToValueAtTime(0.01, t + 0.3);
-                kickGain.gain.setValueAtTime(0.6, t);
-                kickGain.gain.exponentialRampToValueAtTime(0.01, t + 0.3);
+                kick.frequency.setValueAtTime(100, t);
+                kick.frequency.exponentialRampToValueAtTime(0.01, t + 0.2);
+                kickGain.gain.setValueAtTime(0.4, t);
+                kickGain.gain.exponentialRampToValueAtTime(0.01, t + 0.2);
                 kick.start(t);
-                kick.stop(t + 0.3);
+                kick.stop(t + 0.2);
             } else {
+                // Miękki Hi-hat
                 const hat = audioCtx.createOscillator();
                 const hatGain = audioCtx.createGain();
                 const hatFilter = audioCtx.createBiquadFilter();
                 hat.type = 'square';
-                hat.frequency.setValueAtTime(4000, t);
-                hatFilter.type = 'highpass';
-                hatFilter.frequency.value = 7000;
+                hat.frequency.setValueAtTime(800, t);
+                hatFilter.type = 'bandpass';
+                hatFilter.frequency.value = 3000;
                 hat.connect(hatFilter);
                 hatFilter.connect(hatGain);
                 hatGain.connect(audioCtx.destination);
-                hatGain.gain.setValueAtTime(0.08, t);
-                hatGain.gain.exponentialRampToValueAtTime(0.01, t + 0.05);
+                hatGain.gain.setValueAtTime(0.05, t);
+                hatGain.gain.exponentialRampToValueAtTime(0.01, t + 0.1);
                 hat.start(t);
-                hat.stop(t + 0.05);
+                hat.stop(t + 0.1);
             }
 
-            const seq = [261.63, 329.63, 392.00, 523.25, 440.00, 392.00, 329.63, 392.00];
-            const freq = seq[beatStep % seq.length];
-            
-            const noteOsc = audioCtx.createOscillator();
-            const noteGain = audioCtx.createGain();
-            noteOsc.type = 'triangle';
-            noteOsc.connect(noteGain);
-            noteGain.connect(audioCtx.destination);
-            
-            noteOsc.frequency.setValueAtTime(freq, t);
-            noteGain.gain.setValueAtTime(0.25, t);
-            noteGain.gain.linearRampToValueAtTime(0.01, t + 0.2);
-            
-            noteOsc.start(t);
-            noteOsc.stop(t + 0.2);
+            // Spokojna melodyjka
+            const melSeq = [392.00, 523.25, 659.25, 523.25];
+            const melFreq = melSeq[beatStep % melSeq.length];
+            const melOsc = audioCtx.createOscillator();
+            const melGain = audioCtx.createGain();
+            melOsc.type = 'triangle';
+            melOsc.frequency.setValueAtTime(melFreq, t);
+            melOsc.connect(melGain);
+            melGain.connect(audioCtx.destination);
+            melGain.gain.setValueAtTime(0.05, t);
+            melGain.gain.linearRampToValueAtTime(0, t + 0.3);
+            melOsc.start(t);
+            melOsc.stop(t + 0.3);
 
             beatStep++;
         }
@@ -313,6 +346,24 @@
             osc.frequency.exponentialRampToValueAtTime(1200, audioCtx.currentTime + 0.1);
             
             gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+            
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.1);
+        }
+        
+        function playJumpSound() {
+            if(!audioCtx) return;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(300, audioCtx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(600, audioCtx.currentTime + 0.1);
+            
+            gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
             gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
             
             osc.start();
@@ -349,9 +400,11 @@
             player.y = 200;
             player.vy = 0;
             player.vx = 0;
+            player.jumps = 0;
             maxPlayerX = 100; 
             distanceScore = 0;
             boneScore = 0;
+            jumpKeyWasDown = false;
             
             generateMap(); 
             updateScore();
@@ -363,16 +416,17 @@
 
         function update(time) {
             if (audioCtx && time - lastBeat > beatInterval) {
-                playRhythmicBeat();
+                playChillBeat();
                 lastBeat = time;
-                beatFlash = (beatStep % 2 === 0) ? 0.6 : 0.2; 
+                beatFlash = (beatStep % 4 === 1) ? 0.5 : 0.1; // Błyska lekko w rytm akordów
             }
-            if (beatFlash > 0) beatFlash -= 0.02;
+            if (beatFlash > 0) beatFlash -= 0.01;
 
-            player.vy += 0.8; 
+            player.vy += 0.8; // Grawitacja
             player.x += player.vx;
             player.y += player.vy;
 
+            // Ruch poziomy
             if (keys['ArrowLeft'] || keys['KeyA']) {
                 player.vx = -player.speed;
                 lastDir = 'left';
@@ -383,13 +437,26 @@
                 player.vx *= 0.8; 
             }
 
-            if ((keys['ArrowUp'] || keys['KeyW'] || keys['Space']) && player.grounded) {
-                player.vy = player.jumpPower;
-                player.grounded = false;
+            // Obsługa skoku z mechaniką DOUBLE JUMP
+            let isJumpDown = keys['ArrowUp'] || keys['KeyW'] || keys['Space'];
+            
+            if (isJumpDown && !jumpKeyWasDown) {
+                if (player.grounded) {
+                    player.vy = player.jumpPower;
+                    player.grounded = false;
+                    player.jumps = 1;
+                    playJumpSound();
+                } else if (player.jumps < 2) { // Podwójny skok w powietrzu
+                    player.vy = player.jumpPower * 0.9; // Drugi skok odrobinę słabszy
+                    player.jumps = 2;
+                    playJumpSound();
+                }
             }
+            jumpKeyWasDown = isJumpDown; // Zapobiega ciągłemu skakaniu przy przytrzymaniu przycisku
 
             player.grounded = false;
 
+            // Kolizje z platformami
             for (let p of platforms) {
                 if (player.x < p.x + p.w && player.x + player.width > p.x &&
                     player.y < p.y + p.h && player.y + player.height > p.y) {
@@ -398,6 +465,7 @@
                         player.y = p.y - player.height;
                         player.vy = 0;
                         player.grounded = true;
+                        player.jumps = 0; // Resetujemy skoki po dotknięciu ziemi
                     }
                 }
             }
@@ -505,10 +573,14 @@
                     row = 0; 
                 }
 
+                // NAPRAWA LEWITACJI: Obniżenie punktu rysowania obrazka o 12 pikseli, 
+                // żeby zniwelować puste miejsce na dole klatki animacji
+                const Y_OFFSET = 12;
+
                 ctx.drawImage(
                     playerImg,
                     frame * frameW, row * frameH, frameW, frameH,
-                    -player.width / 2, -player.height / 2, player.width, player.height
+                    -player.width / 2, -player.height / 2 + Y_OFFSET, player.width, player.height
                 );
             } else {
                 ctx.fillStyle = '#ffffff';

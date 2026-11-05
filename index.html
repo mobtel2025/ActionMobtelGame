@@ -44,14 +44,14 @@ canvas{display:block;width:100%;height:100%}
   <button id="pauseBtn" aria-label="Pauza">⏸</button>
 </div>
 <div id="score">Punkty: 0<span id="combo"></span></div>
-<div id="hint">Skacz Kundlowi na głowę!</div>
+<div id="hint"></div>
 <div class="ctrl" id="cl"><div class="btn" data-k="ArrowLeft">◄</div><div class="btn" data-k="ArrowRight">►</div></div>
 <div class="ctrl" id="cr"><div class="btn" data-k="ArrowUp">▲</div></div>
 
 <div id="startScreen" class="overlay" style="display:flex">
   <h1 style="margin-bottom:4px">Solpup</h1>
   <p style="font-size:16px;opacity:.8;margin-bottom:20px">stworzony przez mobtel</p>
-  <p>Zbieraj kości, dotrzyj do Kundla Blacki'ego<br>i pokonaj go skokiem na głowę.</p>
+  <p>Zbieraj kości, rozbijaj głową magiczne pudełka „?”<br>i pokonaj Kundla Blacki'ego skokiem na głowę.</p>
   <p style="font-size:15px;opacity:.8">Przyciski na ekranie lub strzałki / WASD / Spacja · ⏸ lub P = pauza · podwójny skok</p>
   <button class="main" id="btnStart">Start</button>
 </div>
@@ -91,7 +91,7 @@ function keyOut(img){
     const d=x.getImageData(0,0,c.width,c.height),p=d.data,r0=p[0],g0=p[1],b0=p[2];
     for(let i=0;i<p.length;i+=4){
       const dist=Math.hypot(p[i]-r0,p[i+1]-g0,p[i+2]-b0);
-      const a=Math.max(0,Math.min(1,(dist-30)/(70-30)))*255; // 30 = całkiem przezroczyste, 70 = całkiem widoczne
+      const a=Math.max(0,Math.min(1,(dist-30)/(70-30)))*255;
       p[i+3]=Math.min(p[i+3],a);
     }
     x.putImageData(d,0,0);
@@ -111,7 +111,7 @@ let distScore=0,boneScore=0,score=0,maxX=100,combo=0,comboT=0;
 let lives=MAXL,bossLives=MAXL,bossOn=false,bossInv=0,inv=0,kb=0;
 let coyote=0,jumpBuf=0,jumpWas=false,safe={x:100,y:200};
 let muted=false;
-let particles=[],platforms=[],bones=[];
+let particles=[],platforms=[],bones=[],boxes=[];
 let topScores=[];
 try{topScores=JSON.parse(localStorage.getItem('neonJumperTopScores'))||[];if(!Array.isArray(topScores))topScores=[]}catch(e){topScores=[]}
 
@@ -135,6 +135,26 @@ function generateMap(){
     if(Math.random()>.3){const n=Math.floor(Math.random()*3)+1;
       for(let j=0;j<n;j++)bones.push({x:p.x+20+Math.random()*Math.max(0,p.w-50),y:p.y-40-Math.random()*60,w:30,h:20,collected:false});}
   }
+  generateBoxes();
+}
+/* losowe magiczne pudełka nad podłożem (nie nachodzą na platformy ani na siebie) */
+function generateBoxes(){
+  boxes=[];
+  const floats=platforms.slice(4);
+  const segs=[[0,2,250,900],[1,2,1280,1900],[2,3,2380,3700],[3,1,4180,4450]]; // [indeks, ile, minX, maxX]
+  for(const [si,count,minX,maxX] of segs){
+    const p=platforms[si];
+    let placed=0;
+    for(let t=0;t<40&&placed<count;t++){
+      const x=minX+Math.random()*(maxX-minX);
+      const y=p.y-105-Math.random()*25-44;
+      const r={x:x-20,y:y-20,w:84,h:84};
+      if(floats.some(f=>r.x<f.x+f.w&&r.x+r.w>f.x&&r.y<f.y+f.h&&r.y+r.h>f.y))continue;
+      if(boxes.some(b=>Math.abs(b.x-x)<170))continue;
+      boxes.push({x,y,w:44,h:44,broken:false,n:2+Math.floor(Math.random()*3)});
+      placed++;
+    }
+  }
 }
 generateMap();
 
@@ -155,7 +175,8 @@ function tone(type,f1,f2,dur,vol,ramp){
     o.connect(g);g.connect(audioCtx.destination);o.start();o.stop(t+dur);}catch(e){}
 }
 const sBone=()=>tone('triangle',600,1200,.1,.2,'exp'),sJump=()=>tone('sine',300,600,.1,.1,'exp'),
-      sHurt=()=>tone('sawtooth',150,60,.15,.3),sStomp=()=>tone('square',350,50,.35,.35,'exp');
+      sHurt=()=>tone('sawtooth',150,60,.15,.3),sStomp=()=>tone('square',350,50,.35,.35,'exp'),
+      sBox=()=>{tone('square',220,520,.12,.25,'exp');setTimeout(()=>tone('triangle',700,1400,.15,.2,'exp'),70);};
 function playBeat(){
   if(!audioCtx||muted)return;
   try{const t=audioCtx.currentTime;
@@ -189,7 +210,7 @@ document.querySelectorAll('.btn').forEach(b=>{
   b.addEventListener('contextmenu',e=>e.preventDefault());
 });
 
-/* ---------- pauza (przycisk ⏸, klawisz P, dotknięcie ekranu pauzy) ---------- */
+/* ---------- pauza ---------- */
 function setPause(v){
   if(state!=='playing')return;
   paused=v;
@@ -211,7 +232,8 @@ function updateScore(){
   $('score').firstChild.nodeValue='Punkty: '+score;
   $('combo').textContent=combo>1?'Combo x'+Math.min(combo,5):'';
 }
-function showHint(){const h=$('hint');h.style.opacity=1;setTimeout(()=>h.style.opacity=0,3200);}
+let hintTimer=null;
+function showHint(msg){const h=$('hint');h.textContent=msg;h.style.opacity=1;clearTimeout(hintTimer);hintTimer=setTimeout(()=>h.style.opacity=0,3200);}
 
 /* ---------- gra ---------- */
 function resetGame(){
@@ -222,6 +244,7 @@ function resetGame(){
   for(const k in keys)keys[k]=false;
   generateMap();updateScore();updateHUD();
   state='playing';paused=false;$('pauseBtn').textContent='⏸';lastT=null;
+  showHint('Uderz głową w pudełka „?”');
 }
 function burst(x,y,color,n){for(let i=0;i<n;i++)particles.push({x,y,vx:(Math.random()-.5)*8,vy:(Math.random()-.9)*7,life:30+Math.random()*20,color});}
 function hurt(dir){
@@ -230,6 +253,15 @@ function hurt(dir){
   player.vy=-8;player.vx=dir*9;kb=12;
   burst(player.x+30,player.y+30,'#ff0055',14);
   if(lives<=0)endGame(false);
+}
+function breakBox(bx){
+  bx.broken=true;sBox();shake=Math.max(shake,4);
+  const cx=bx.x+bx.w/2,cy=bx.y+bx.h/2;
+  burst(cx,cy,'#ffd84a',14);burst(cx,cy,'#ff9a1f',10);burst(cx,cy,'#ffffff',5);
+  for(let i=0;i<bx.n;i++){
+    bones.push({x:cx-15,y:bx.y-10,w:30,h:20,collected:false,pop:true,
+      vx:(i-(bx.n-1)/2)*2.4+(Math.random()-.5),vy:-9-Math.random()*3,delay:14});
+  }
 }
 function endGame(win){
   state='over';
@@ -253,6 +285,7 @@ $('btnSubmit').onclick=()=>{
 $('btnRestart').onclick=()=>{$('lbScreen').style.display='none';resetGame();};
 
 const hit=(a,b)=>a.x<b.x+(b.w??b.width)&&a.x+a.width>b.x&&a.y<b.y+(b.h??b.height)&&a.y+a.height>b.y;
+const hitB=(a,b)=>a.x<b.x+b.w&&a.x+a.width>b.x&&a.y<b.y+b.h&&a.y+a.height>b.y;
 
 function update(now){
   if(audioCtx&&!muted&&now-lastBeat>500){playBeat();lastBeat=now;beatFlash=(beatStep%4===1)?.5:.1;}
@@ -284,12 +317,25 @@ function update(now){
       if(cx>p.x+40&&cx<p.x+p.w-40&&p.w>=100)safe={x:player.x,y:player.y};
     }
   }
+  // magiczne pudełka: uderzenie głową od spodu = rozbicie; z góry = stanie; z boku = ściana
+  const prevY=player.y-player.vy;
+  for(const bx of boxes){
+    if(bx.broken||!hitB(player,bx))continue;
+    if(player.vy<0&&prevY>=bx.y+bx.h-6){
+      breakBox(bx);player.y=bx.y+bx.h;player.vy=1;
+    }else if(player.vy>=0&&prevY+player.height<=bx.y+8){
+      player.y=bx.y-player.height;player.vy=0;player.grounded=true;player.jumps=0;
+    }else{
+      if(player.x+30<bx.x+bx.w/2)player.x=bx.x-player.width;else player.x=bx.x+bx.w;
+      player.vx=0;
+    }
+  }
   coyote=player.grounded?6:Math.max(0,coyote-1);
 
   if(player.x<0)player.x=0;
   if(player.x>maxX){maxX=player.x;distScore=Math.floor((maxX-100)/50);updateScore();}
 
-  if(player.x>4100&&!bossOn){bossOn=true;$('bossPanel').style.display='block';updateHUD();showHint();}
+  if(player.x>4100&&!bossOn){bossOn=true;$('bossPanel').style.display='block';updateHUD();showHint('Skacz Kundlowi na głowę!');}
   if(bossOn&&bossLives>0){
     const sp=3+(MAXL-bossLives);
     boss.vx=(boss.vx<0?-1:1)*sp;
@@ -312,8 +358,25 @@ function update(now){
     if(boss.grounded){if(++boss.animC>6){boss.frame=(boss.frame+1)%4;boss.animC=0;}}else boss.frame=1;
   }
 
+  // kości wyskakujące z pudełek: fizyka, odbicia od podłoża
   for(const b of bones){
-    if(!b.collected&&hit(player,b)){
+    if(!b.pop||b.collected)continue;
+    b.vy+=.5;b.vx*=.99;b.x+=b.vx;
+    const py=b.y;b.y+=b.vy;
+    if(b.delay>0)b.delay--;
+    if(b.vy>0){
+      for(const p of platforms){
+        if(b.x+b.w>p.x&&b.x<p.x+p.w&&b.y+b.h>=p.y&&py+b.h<=p.y+4){
+          b.y=p.y-b.h;b.vy=-b.vy*.35;
+          if(Math.abs(b.vy)<2){b.vy=0;b.vx=0;b.pop=false;}
+          break;
+        }
+      }
+    }
+    if(b.y>WORLD_H+80)b.collected=true;
+  }
+  for(const b of bones){
+    if(!b.collected&&!(b.delay>0)&&hit(player,b)){
       b.collected=true;combo++;comboT=90;
       boneScore+=20*Math.min(combo,5);sBone();updateScore();
       burst(b.x+15,b.y+10,'#ffffff',8);
@@ -339,7 +402,37 @@ function sprite(img,fr,row,dw,dh,yo){
   const fw=img.width/4,fh=img.height/3;
   ctx.drawImage(img,fr*fw,row*fh,fw,fh,-dw/2,-dh/2+(yo||0),dw,dh);
 }
+function rr(x,y,w,h,r){
+  ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();
+}
+function drawBox(b,t){
+  const x=b.x,y=b.y+Math.sin(t*3+b.x*.01)*2,w=b.w,h=b.h;
+  ctx.save();
+  ctx.shadowColor='#ffd84a';ctx.shadowBlur=12+beatFlash*20;
+  const g=ctx.createLinearGradient(0,y,0,y+h);
+  g.addColorStop(0,'#ffe46b');g.addColorStop(.55,'#ffb52e');g.addColorStop(1,'#e07a00');
+  ctx.fillStyle=g;rr(x,y,w,h,8);ctx.fill();
+  ctx.shadowBlur=0;
+  ctx.lineWidth=3;ctx.strokeStyle='#8a4b00';rr(x,y,w,h,8);ctx.stroke();
+  ctx.lineWidth=2;ctx.strokeStyle='rgba(255,246,170,.75)';rr(x+4,y+4,w-8,h-8,5);ctx.stroke();
+  // połysk
+  ctx.save();rr(x,y,w,h,8);ctx.clip();
+  const sx=((t*60+b.x)%120)-40;
+  ctx.fillStyle='rgba(255,255,255,.3)';
+  ctx.beginPath();ctx.moveTo(x+sx,y);ctx.lineTo(x+sx+14,y);ctx.lineTo(x+sx-6,y+h);ctx.lineTo(x+sx-20,y+h);ctx.fill();
+  ctx.restore();
+  // nity
+  ctx.fillStyle='#8a4b00';
+  for(const [dx,dy] of [[9,9],[w-9,9],[9,h-9],[w-9,h-9]]){ctx.beginPath();ctx.arc(x+dx,y+dy,2.5,0,7);ctx.fill();}
+  // znak zapytania
+  ctx.font='bold 28px "Segoe UI",Arial,sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+  ctx.fillStyle='#a85a00';ctx.fillText('?',x+w/2+1.5,y+h/2+2.5);
+  ctx.fillStyle='#ffffff';ctx.fillText('?',x+w/2,y+h/2+1);
+  ctx.restore();
+}
 function draw(){
+  const t=performance.now()/1000;
   ctx.setTransform(dpr,0,0,dpr,0,0);
   ctx.imageSmoothingEnabled=false;
   const W=canvas.width/dpr,H=canvas.height/dpr;
@@ -358,6 +451,10 @@ function draw(){
   for(const p of platforms){
     if(p.x+p.w>cameraX&&p.x<cameraX+viewW){
       ctx.fillStyle=p.color;ctx.shadowBlur=5+beatFlash*15;ctx.shadowColor=p.color;ctx.fillRect(p.x,p.y,p.w,p.h);}
+  }
+  ctx.shadowBlur=0;
+  for(const b of boxes){
+    if(!b.broken&&b.x+b.w>cameraX&&b.x<cameraX+viewW)drawBox(b,t);
   }
   ctx.shadowBlur=5;ctx.shadowColor='#fff';ctx.fillStyle='#fff';
   for(const b of bones){

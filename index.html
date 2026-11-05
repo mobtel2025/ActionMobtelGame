@@ -22,7 +22,8 @@ canvas{display:block;width:100%;height:100%}
 #cl{left:calc(10px + env(safe-area-inset-left,0px))}#cr{right:calc(18px + env(safe-area-inset-right,0px))}
 .btn{width:72px;height:72px;background:rgba(0,0,0,.4);border:2px solid #0ff;color:#0ff;font-size:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 0 15px rgba(0,255,255,.5);-webkit-tap-highlight-color:transparent;touch-action:none}
 .btn.on{background:rgba(0,255,255,.4);transform:scale(.95)}
-#mute{position:absolute;top:calc(12px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);z-index:16;width:40px;height:40px;font-size:20px;border-radius:50%;border:1px solid rgba(0,255,255,.4);background:rgba(0,0,0,.5);color:#fff}
+#topBtns{position:absolute;top:calc(12px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);z-index:16;display:flex;gap:8px}
+#topBtns button{width:42px;height:42px;font-size:20px;border-radius:50%;border:1px solid rgba(0,255,255,.4);background:rgba(0,0,0,.5);color:#fff;-webkit-tap-highlight-color:transparent}
 .overlay{position:absolute;inset:0;background:rgba(0,0,0,.85);display:none;flex-direction:column;align-items:center;justify-content:center;z-index:20;color:#0ff;text-align:center;padding:16px;box-sizing:border-box}
 .overlay h1{text-shadow:0 0 15px #0ff;margin:0 0 14px;font-size:38px}
 .overlay p{font-size:20px;margin:0 0 14px}
@@ -38,7 +39,10 @@ canvas{display:block;width:100%;height:100%}
   <div class="panel"><b>Aleks (Gracz)</b><div class="hearts" id="ph"></div></div>
   <div class="panel" id="bossPanel"><b>Kundel Blacki</b><div class="hearts" id="bh"></div></div>
 </div>
-<button id="mute" aria-label="Dźwięk">🔊</button>
+<div id="topBtns">
+  <button id="mute" aria-label="Dźwięk">🔊</button>
+  <button id="pauseBtn" aria-label="Pauza">⏸</button>
+</div>
 <div id="score">Punkty: 0<span id="combo"></span></div>
 <div id="hint">Skacz Kundlowi na głowę!</div>
 <div class="ctrl" id="cl"><div class="btn" data-k="ArrowLeft">◄</div><div class="btn" data-k="ArrowRight">►</div></div>
@@ -48,7 +52,7 @@ canvas{display:block;width:100%;height:100%}
   <h1 style="margin-bottom:4px">Solpup</h1>
   <p style="font-size:16px;opacity:.8;margin-bottom:20px">stworzony przez mobtel</p>
   <p>Zbieraj kości, dotrzyj do Kundla Blacki'ego<br>i pokonaj go skokiem na głowę.</p>
-  <p style="font-size:15px;opacity:.8">Strzałki / WASD / Spacja · P = pauza · podwójny skok</p>
+  <p style="font-size:15px;opacity:.8">Przyciski na ekranie lub strzałki / WASD / Spacja · ⏸ lub P = pauza · podwójny skok</p>
   <button class="main" id="btnStart">Start</button>
 </div>
 <div id="overScreen" class="overlay">
@@ -62,23 +66,41 @@ canvas{display:block;width:100%;height:100%}
   <ul id="lb"></ul>
   <button class="main" id="btnRestart">Zagraj ponownie</button>
 </div>
-<div id="pauseScreen" class="overlay"><h1>Pauza</h1><p>Naciśnij P, aby wrócić</p></div>
+<div id="pauseScreen" class="overlay"><h1>Pauza</h1><p>Dotknij ekranu, aby wrócić</p></div>
 
 <script>
 const $=id=>document.getElementById(id);
 const canvas=$('c'),ctx=canvas.getContext('2d');
-const WORLD_H=600;               // stała wysokość świata – poziom nie zależy od ekranu
+const WORLD_H=600;
 let scale=1,dpr=1,viewW=800;
 function resize(){
   dpr=window.devicePixelRatio||1;
   const w=window.innerWidth,h=window.innerHeight;
   canvas.width=Math.round(w*dpr);canvas.height=Math.round(h*dpr);
-  scale=h/WORLD_H;viewW=w/scale;  // tylko przeliczenie widoku, bez regenerowania mapy
+  scale=h/WORLD_H;viewW=w/scale;
 }
 window.addEventListener('resize',resize);resize();
 
-const playerImg=new Image();playerImg.src='Aleks.jpg';
-const bossImg=new Image();bossImg.src='Black.jpg';
+/* ---------- grafiki: usuwanie tła z JPG (kolor z lewego górnego rogu) ---------- */
+function keyOut(img){
+  const c=document.createElement('canvas');
+  c.width=img.naturalWidth;c.height=img.naturalHeight;
+  const x=c.getContext('2d',{willReadFrequently:true});
+  x.drawImage(img,0,0);
+  try{
+    const d=x.getImageData(0,0,c.width,c.height),p=d.data,r0=p[0],g0=p[1],b0=p[2];
+    for(let i=0;i<p.length;i+=4){
+      const dist=Math.hypot(p[i]-r0,p[i+1]-g0,p[i+2]-b0);
+      const a=Math.max(0,Math.min(1,(dist-30)/(70-30)))*255; // 30 = całkiem przezroczyste, 70 = całkiem widoczne
+      p[i+3]=Math.min(p[i+3],a);
+    }
+    x.putImageData(d,0,0);
+  }catch(e){console.warn('Nie można usunąć tła (otwórz grę przez serwer/hosting)',e);}
+  return c;
+}
+let playerSpr=null,bossSpr=null;
+const playerImg=new Image();playerImg.onload=()=>{playerSpr=keyOut(playerImg);};playerImg.src='Aleks.jpg';
+const bossImg=new Image();bossImg.onload=()=>{bossSpr=keyOut(bossImg);};bossImg.src='Black.jpg';
 
 /* ---------- stan ---------- */
 const GROUND=480,STEP=1000/60,MAXL=3;
@@ -121,7 +143,7 @@ let audioCtx,beatStep=0,lastBeat=0;
 function initAudio(){
   try{
     if(!audioCtx){const AC=window.AudioContext||window.webkitAudioContext;if(AC){audioCtx=new AC();lastBeat=performance.now();playBeat();}}
-    if(audioCtx&&audioCtx.state==='suspended'&&!muted)audioCtx.resume();
+    if(audioCtx&&audioCtx.state==='suspended'&&!muted&&!paused)audioCtx.resume();
   }catch(e){}
 }
 function tone(type,f1,f2,dur,vol,ramp){
@@ -146,31 +168,39 @@ function playBeat(){
 }
 $('mute').addEventListener('click',()=>{
   muted=!muted;$('mute').textContent=muted?'🔇':'🔊';
-  if(audioCtx){muted?audioCtx.suspend():audioCtx.resume();}
+  if(audioCtx){(muted||paused)?audioCtx.suspend():audioCtx.resume();}
 });
 
 /* ---------- sterowanie ---------- */
 window.addEventListener('keydown',e=>{
   if(e.target.tagName==='INPUT')return;
   if(e.code==='KeyP'&&state==='playing'){setPause(!paused);return;}
-  if(state==='playing'){keys[e.code]=true;initAudio();
+  if(state==='playing'&&!paused){keys[e.code]=true;initAudio();
     if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code))e.preventDefault();}
 });
 window.addEventListener('keyup',e=>keys[e.code]=false);
 window.addEventListener('blur',()=>{for(const k in keys)keys[k]=false;});
 document.querySelectorAll('.btn').forEach(b=>{
   const k=b.dataset.k;
-  const down=e=>{e.preventDefault();if(state==='playing'){keys[k]=true;b.classList.add('on');initAudio();}};
+  const down=e=>{e.preventDefault();if(state==='playing'&&!paused){keys[k]=true;b.classList.add('on');initAudio();}};
   const up=e=>{e.preventDefault();keys[k]=false;b.classList.remove('on');};
   b.addEventListener('pointerdown',down);
   ['pointerup','pointercancel','pointerleave','lostpointercapture'].forEach(ev=>b.addEventListener(ev,up));
   b.addEventListener('contextmenu',e=>e.preventDefault());
 });
+
+/* ---------- pauza (przycisk ⏸, klawisz P, dotknięcie ekranu pauzy) ---------- */
 function setPause(v){
-  paused=v;$('pauseScreen').style.display=v?'flex':'none';
+  if(state!=='playing')return;
+  paused=v;
+  $('pauseScreen').style.display=v?'flex':'none';
+  $('pauseBtn').textContent=v?'▶':'⏸';
+  if(v){for(const k in keys)keys[k]=false;document.querySelectorAll('.btn').forEach(b=>b.classList.remove('on'));}
   if(audioCtx&&!muted)v?audioCtx.suspend():audioCtx.resume();
   if(!v)lastT=null;
 }
+$('pauseBtn').addEventListener('click',()=>setPause(!paused));
+$('pauseScreen').addEventListener('click',()=>setPause(false));
 document.addEventListener('visibilitychange',()=>{if(document.hidden&&state==='playing'&&!paused)setPause(true);});
 
 /* ---------- HUD ---------- */
@@ -191,7 +221,7 @@ function resetGame(){
   maxX=100;distScore=0;boneScore=0;combo=0;comboT=0;particles=[];safe={x:100,y:200};
   for(const k in keys)keys[k]=false;
   generateMap();updateScore();updateHUD();
-  state='playing';paused=false;lastT=null;
+  state='playing';paused=false;$('pauseBtn').textContent='⏸';lastT=null;
 }
 function burst(x,y,color,n){for(let i=0;i<n;i++)particles.push({x,y,vx:(Math.random()-.5)*8,vy:(Math.random()-.9)*7,life:30+Math.random()*20,color});}
 function hurt(dir){
@@ -230,13 +260,11 @@ function update(now){
   if(inv>0)inv--;if(bossInv>0)bossInv--;if(kb>0)kb--;if(shake>0)shake*=.85;
   if(comboT>0&&--comboT===0){combo=0;updateScore();}
 
-  // ruch poziomy
   if(kb===0){
     if(keys.ArrowLeft||keys.KeyA){player.vx=-player.speed;lastDir='left';}
     else if(keys.ArrowRight||keys.KeyD){player.vx=player.speed;lastDir='right';}
     else player.vx*=.8;
   }
-  // skok: coyote time + bufor
   const jd=!!(keys.ArrowUp||keys.KeyW||keys.Space);
   if(jd&&!jumpWas)jumpBuf=6;
   jumpWas=jd;
@@ -245,7 +273,7 @@ function update(now){
     else if(player.jumps<2&&!player.grounded){player.vy=player.jumpPower*.9;player.jumps=2;jumpBuf=0;sJump();}
     else jumpBuf--;
   }
-  if(!jd&&player.vy<-6)player.vy*=.9; // krótszy skok przy szybkim puszczeniu
+  if(!jd&&player.vy<-6)player.vy*=.9;
 
   player.vy+=.8;player.x+=player.vx;player.y+=player.vy;
   player.grounded=false;
@@ -261,7 +289,6 @@ function update(now){
   if(player.x<0)player.x=0;
   if(player.x>maxX){maxX=player.x;distScore=Math.floor((maxX-100)/50);updateScore();}
 
-  // boss
   if(player.x>4100&&!bossOn){bossOn=true;$('bossPanel').style.display='block';updateHUD();showHint();}
   if(bossOn&&bossLives>0){
     const sp=3+(MAXL-bossLives);
@@ -276,7 +303,7 @@ function update(now){
       if(Math.random()<.015)boss.vy=-12;
     }
     if(bossInv===0&&hit(player,boss)){
-      if(player.vy>0&&player.y+player.height-player.vy<=boss.y+20){ // skok na głowę
+      if(player.vy>0&&player.y+player.height-player.vy<=boss.y+20){
         bossLives--;bossInv=70;player.vy=-12;player.jumps=1;sStomp();shake=6;updateHUD();
         burst(boss.x+25,boss.y,'#ff3300',18);
         if(bossLives<=0){boneScore+=500;updateScore();endGame(true);}
@@ -285,7 +312,6 @@ function update(now){
     if(boss.grounded){if(++boss.animC>6){boss.frame=(boss.frame+1)%4;boss.animC=0;}}else boss.frame=1;
   }
 
-  // kości + combo
   for(const b of bones){
     if(!b.collected&&hit(player,b)){
       b.collected=true;combo++;comboT=90;
@@ -293,18 +319,15 @@ function update(now){
       burst(b.x+15,b.y+10,'#ffffff',8);
     }
   }
-  // cząsteczki
   for(const p of particles){p.x+=p.vx;p.y+=p.vy;p.vy+=.3;p.life--;}
   particles=particles.filter(p=>p.life>0);
 
-  // upadek – respawn na ostatniej bezpiecznej pozycji
   if(player.y>WORLD_H+100){
     hurt(0);
     if(lives>0){player.x=safe.x;player.y=safe.y-10;player.vx=0;player.vy=0;kb=0;inv=120;}
   }
   cameraX=Math.max(0,player.x-viewW/2.5);
 
-  // animacja
   if(player.grounded){
     animC++;
     if(Math.abs(player.vx)>.5){if(animC>5){frame=(frame+1)%4;animC=0;}}
@@ -323,7 +346,6 @@ function draw(){
   ctx.fillStyle='#7ac5e8';ctx.fillRect(0,0,W,H);
   ctx.setTransform(dpr*scale,0,0,dpr*scale,0,0);
 
-  // paralaksa: dwie warstwy wzgórz
   for(const [f,col,base,amp] of [[.2,'#6bb3d6',420,70],[.4,'#5aa1c6',470,50]]){
     ctx.fillStyle=col;ctx.beginPath();ctx.moveTo(0,WORLD_H);
     for(let x=0;x<=viewW+40;x+=40)ctx.lineTo(x,base-Math.abs(Math.sin((x+cameraX*f)/130))*amp);
@@ -347,7 +369,7 @@ function draw(){
   }
   ctx.shadowBlur=0;
 
-  if(bossOn){ // legowisko (dekoracja / cel)
+  if(bossOn){
     ctx.fillStyle='#654321';ctx.beginPath();ctx.moveTo(lair.x+45,lair.y);ctx.lineTo(lair.x,lair.y+80);ctx.lineTo(lair.x+90,lair.y+80);ctx.fill();
     ctx.fillStyle='#221100';ctx.beginPath();ctx.moveTo(lair.x+45,lair.y+35);ctx.lineTo(lair.x+25,lair.y+80);ctx.lineTo(lair.x+65,lair.y+80);ctx.fill();
     ctx.fillStyle='#fff';ctx.fillRect(lair.x+33,lair.y+30,24,6);
@@ -355,14 +377,14 @@ function draw(){
   if(bossOn&&bossLives>0&&!(bossInv>0&&bossInv%8<4)){
     ctx.save();ctx.translate(boss.x+25,boss.y+25);
     if(boss.lastDir==='right')ctx.scale(-1,1);
-    if(bossImg.complete&&bossImg.width>0)sprite(bossImg,boss.frame,!boss.grounded?2:1,boss.width,boss.height);
+    if(bossSpr)sprite(bossSpr,boss.frame,!boss.grounded?2:1,boss.width,boss.height);
     else{ctx.fillStyle='#ff0000';ctx.fillRect(-25,-25,50,50);}
     ctx.restore();
   }
   if(!(inv>0&&inv%10<5)){
     ctx.save();ctx.translate(player.x+30,player.y+30);
     if(lastDir==='left')ctx.scale(-1,1);
-    if(playerImg.complete&&playerImg.width>0)sprite(playerImg,frame,!player.grounded?2:(Math.abs(player.vx)>.5?1:0),player.width,player.height,12);
+    if(playerSpr)sprite(playerSpr,frame,!player.grounded?2:(Math.abs(player.vx)>.5?1:0),player.width,player.height,12);
     else{ctx.fillStyle='#fff';ctx.fillRect(-30,-30,60,60);}
     ctx.restore();
   }
@@ -371,7 +393,6 @@ function draw(){
   ctx.restore();
 }
 
-/* ---------- pętla ze stałym krokiem (60 Hz niezależnie od monitora) ---------- */
 let lastT=null,acc=0;
 function loop(t){
   if(lastT===null)lastT=t;
